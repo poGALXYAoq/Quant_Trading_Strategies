@@ -206,11 +206,14 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
-# 忽略Calendar_Spread_Strategy目录下的 回测结果 文件夹
-/Calendar_Spread_Strategy/backtest_results_*/
+# 忽略所有策略目录下的 回测结果 文件夹
+/*/backtest_results*/
 
-# 忽略Calendar_Spread_Strategy目录下的 data 文件夹
-/Calendar_Spread_Strategy/data/
+# 忽略所有策略目录下的 data 文件夹
+/*/data/
 
 # 忽略Calendar_Spread_Strategy目录下的 TA_option_data.ipynb 文件
 /Calendar_Spread_Strategy/TA_option_data.ipynb
+
+# 忽略数据的获取
+TA_option_data.ipynb
