@@ -10,19 +10,26 @@ warnings.filterwarnings('ignore')
 # --- 1. 策略核心参数 ---
 # 入场相关
 START_DATE_STR = '2024-05-01'
-INITIAL_CAPITAL = 1_000_000  # 初始资金
+INITIAL_CAPITAL = 2_000_000  # 初始资金
 # 开仓价格模式: 'open' 或 'close'。为提升首日收益与K线的一致性，默认使用收盘价执行开仓
 START_PRICE_MODE = 'close'
+# 期权行权价选择方式:
+# - 'atm': 以当日 options 数据中的 underlying_price 选择最接近的平值行权价(忽略 STRIKE_PRICE_OFFSET)
+# - 'nearest': 以 underlying_price + STRIKE_PRICE_OFFSET 为目标，选择最近行权价
+# - 'floor': 以 underlying_price + STRIKE_PRICE_OFFSET 为目标，选择不高于目标价的最高行权价
+# - 'ceiling': 以 underlying_price + STRIKE_PRICE_OFFSET 为目标，选择不低于目标价的最低行权价
+SELECT_STRIKE_METHOD = 'nearest'
 
-# 头寸相关
+# 头寸相关（全局设置）
 FUTURES_INITIAL_LOTS = 100
+# 保护看跌期权持仓手数（全程不变，直到到期平仓）
 PUT_OPTION_LOTS = 300
 
 # 期权选择相关
 STRIKE_PRICE_OFFSET = -200
 
 # 网格交易相关
-PRICE_GRID_INTERVAL = 10
+PRICE_GRID_INTERVAL = 50
 LOTS_ADJUSTMENT_STEP = 10
 
 # 仓位限制
@@ -108,7 +115,7 @@ def plot_results(daily_log_df, trade_log_df):
     end_dt = daily_log_df.index.max()
 
     fig = make_subplots(
-        rows=5, cols=1,
+        rows=6, cols=1,
         shared_xaxes=True,
         vertical_spacing=0.05,
         subplot_titles=(
@@ -116,10 +123,12 @@ def plot_results(daily_log_df, trade_log_df):
             '账户净值曲线 (Equity Curve)',
             '期货持仓手数',
             '每日盈亏 (Daily PnL)',
+            '期权价格 (受保护看跌)',
             '关键指标与说明'
         ),
-        row_heights=[0.38, 0.22, 0.16, 0.16, 0.12],
+        row_heights=[0.32, 0.22, 0.16, 0.14, 0.10, 0.10],
         specs=[[{"type": "xy"}],
+               [{"type": "xy"}],
                [{"type": "xy"}],
                [{"type": "xy"}],
                [{"type": "xy"}],
@@ -256,7 +265,7 @@ def plot_results(daily_log_df, trade_log_df):
     # --- 整体布局设置 ---
     fig.update_layout(
         title_text='<b>受保护的期货逆势网格策略 - 回测分析报告</b>',
-        height=2000,
+        height=2200,
         legend_title='图例',
         showlegend=True,
         xaxis_rangeslider_visible=False,
@@ -266,6 +275,31 @@ def plot_results(daily_log_df, trade_log_df):
     fig.update_xaxes(title_text='日期', row=4, col=1, showgrid=True, gridcolor='LightGray')
 
     # --- 子图5: 关键指标与说明 ---
+    # --- 子图5: 期权价格与总价值（受保护看跌）---
+    if 'put_option_price' in daily_log_df.columns:
+        fig.add_trace(
+            go.Scatter(
+                x=daily_log_df.index,
+                y=daily_log_df['put_option_price'],
+                name='看跌期权收盘价',
+                line=dict(color='purple', width=1.5),
+                mode='lines+markers'
+            ),
+            row=5, col=1, secondary_y=False
+        )
+    if 'options_total_value' in daily_log_df.columns:
+        fig.add_trace(
+            go.Scatter(
+                x=daily_log_df.index,
+                y=daily_log_df['options_total_value'],
+                name='期权总市值',
+                line=dict(color='darkmagenta', width=1, dash='dot')
+            ),
+            row=5, col=1, secondary_y=False
+        )
+    fig.update_yaxes(title_text="期权价格/市值", row=5, col=1, tickformat=',.2f', showgrid=True, gridcolor='LightGray')
+    fig.update_xaxes(title_text='日期', row=5, col=1, showgrid=True, gridcolor='LightGray')
+
     metrics_header = ['指标', '取值']
     metrics_rows = [
         ['开始日期', start_dt.strftime('%Y-%m-%d') if not pd.isna(start_dt) else '-'],
@@ -290,7 +324,7 @@ def plot_results(daily_log_df, trade_log_df):
             header=dict(values=metrics_header, fill_color='lightgrey', align='left'),
             cells=dict(values=table_cells, align='left')
         ),
-        row=5, col=1
+        row=6, col=1
     )
 
     # --- 保存图表 ---
@@ -382,7 +416,7 @@ def run_backtest_event_driven(futures_df, options_df):
             print(f"[期货建仓] 日期: {today.date()} | 买入手数: {FUTURES_INITIAL_LOTS} | 价格: {trade_price:.2f} | 手续费: {commission:.2f} | 现金余额: {cash:,.2f}")
 
             # 2. 建立期权保护头寸
-            target_strike = entry_price + STRIKE_PRICE_OFFSET
+            # 以当日期权数据中的 underlying_price 为基准，计算目标行权价
             # 安全获取当日期权数据，若无则回退至最近一个不晚于今日的交易日
             options_today = options_df.loc[options_df.index.isin([today])]
             if options_today.empty:
@@ -391,22 +425,57 @@ def run_backtest_event_driven(futures_df, options_df):
                     raise ValueError(f"开仓日之前无可用期权数据: {today.date()}")
                 nearest = prev_dates.max()
                 options_today = options_df.loc[options_df.index.isin([nearest])]
+            # 以当日标的参考价（按当日第一条记录）为准，避免“中位数”等聚合引入的错配
+            if 'underlying_price' in options_today.columns and not options_today['underlying_price'].isna().all():
+                underlying_ref = float(options_today['underlying_price'].iloc[0])
+            else:
+                underlying_ref = float(entry_price)
+            # 计算目标行权价（平值或带偏移）
+            if SELECT_STRIKE_METHOD == 'atm':
+                target_strike = underlying_ref
+            else:
+                target_strike = underlying_ref + STRIKE_PRICE_OFFSET
 
             put_options = options_today[options_today['option_type'] == 'put']
             if put_options.empty:
                 raise ValueError(f"在 {today.date()} 及之前最近可用交易日未找到看跌期权")
             
-            best_option = put_options.iloc[(put_options['strike_price'] - target_strike).abs().argsort()[:1]].iloc[0]
-            option_price = best_option['close']
-            option_strike = best_option['strike_price']
+            # 选择行权价
+            method = SELECT_STRIKE_METHOD
+            if method == 'floor':
+                candidates = put_options[put_options['strike_price'] <= target_strike]
+                if not candidates.empty:
+                    best_option = candidates.sort_values('strike_price', ascending=False).iloc[0]
+                else:
+                    best_option = put_options.assign(_diff=(put_options['strike_price'] - target_strike).abs()) \
+                                           .sort_values('_diff', ascending=True).iloc[0]
+            elif method == 'ceiling':
+                candidates = put_options[put_options['strike_price'] >= target_strike]
+                if not candidates.empty:
+                    best_option = candidates.sort_values('strike_price', ascending=True).iloc[0]
+                else:
+                    best_option = put_options.assign(_diff=(put_options['strike_price'] - target_strike).abs()) \
+                                           .sort_values('_diff', ascending=True).iloc[0]
+            else:  # 'atm' 或 'nearest' 都按最近处理
+                best_option = put_options.assign(_diff=(put_options['strike_price'] - target_strike).abs()) \
+                                       .sort_values('_diff', ascending=True).iloc[0]
+            option_price = float(best_option['close'])
+            option_strike = float(best_option['strike_price'])
 
             cost = PUT_OPTION_LOTS * option_price
             commission = PUT_OPTION_LOTS * COMMISSION_OPTIONS
             cash -= (cost + commission)
-            options_position[option_strike] = {'lots': PUT_OPTION_LOTS, 'entry_price': option_price}
+            # 记录为看跌期权持仓，后续估值严格按 option_type=put 过滤
+            options_position[option_strike] = {
+                'lots': PUT_OPTION_LOTS,
+                'entry_price': option_price,
+                'option_type': 'put'
+            }
             trade_log.append({'date': today, 'action': 'buy_put_option', 'lots': PUT_OPTION_LOTS, 'price': option_price, 'commission': commission, 'strike': option_strike})
             print(f"[保护期权] 日期: {today.date()} | 买入看跌: {PUT_OPTION_LOTS} 手 | 价格: {option_price:.2f} | 行权价: {option_strike:.2f} | 手续费: {commission:.2f} | 现金余额: {cash:,.2f}")
             print(f"策略于 {start_date.date()} 启动。期货@{trade_price:.2f}, 期权@{option_price:.2f}(行权价{option_strike})")
+            # 将期权手续费计入当日快照
+            daily_snapshot['commission_paid'] += commission
 
         # --- 持仓调整逻辑 (非开仓日/平仓日) ---
         elif today < option_expiry_date:
@@ -468,7 +537,8 @@ def run_backtest_event_driven(futures_df, options_df):
             # 2. 平期权
             options_today = options_df.loc[options_df.index.isin([today])]
             for strike, pos in options_position.items():
-                final_opt_price_series = options_today[options_today['strike_price'] == strike]['close']
+                # 仅按看跌期权估值，防止与同行权价的看涨混淆
+                final_opt_price_series = options_today[(options_today['strike_price'] == strike) & (options_today['option_type'] == 'put')]['close']
                 final_opt_price = final_opt_price_series.iloc[0] if not final_opt_price_series.empty else 0
                 
                 revenue = pos['lots'] * final_opt_price
@@ -483,14 +553,32 @@ def run_backtest_event_driven(futures_df, options_df):
         # 1. 期货价值
         futures_market_value = futures_lots * futures_close
 
-        # 2. 期权价值
+        # 2. 期权价值与记录期权价格（仅保护看跌）
         options_market_value = 0
         options_today = options_df.loc[options_df.index.isin([today])]
+        # 默认当日期权价格为空，用于 daily_log 补充
+        put_option_price_today = np.nan
+        options_total_lots_today = 0
         if not options_today.empty:
             for strike, pos in options_position.items():
-                current_opt_price_series = options_today[options_today['strike_price'] == strike]['close']
+                # 仅按看跌期权估值，防止与同行权价的看涨混淆
+                current_opt_price_series = options_today[(options_today['strike_price'] == strike) & (options_today['option_type'] == 'put')]['close']
                 current_opt_price = current_opt_price_series.iloc[0] if not current_opt_price_series.empty else pos['entry_price']
                 options_market_value += pos['lots'] * current_opt_price
+                options_total_lots_today += pos['lots']
+                # 记录一个代表性的保护看跌价格（若持有多个行权价，可取加权平均）
+                if np.isnan(put_option_price_today):
+                    put_option_price_today = current_opt_price
+                else:
+                    # 加权平均（按持仓手数）
+                    total_lots = 0
+                    accum = 0.0
+                    for s2, p2 in options_position.items():
+                        series2 = options_today[(options_today['strike_price'] == s2) & (options_today['option_type'] == 'put')]['close']
+                        price2 = series2.iloc[0] if not series2.empty else p2['entry_price']
+                        total_lots += p2['lots']
+                        accum += p2['lots'] * price2
+                    put_option_price_today = accum / total_lots if total_lots > 0 else current_opt_price
         
         # 总价值 = 现金 + 期货市值 + 期权市值
         total_value = cash + futures_market_value + options_market_value
@@ -505,6 +593,9 @@ def run_backtest_event_driven(futures_df, options_df):
         daily_snapshot['cash'] = cash
         daily_snapshot['futures_market_value'] = futures_market_value
         daily_snapshot['options_market_value'] = options_market_value
+        daily_snapshot['put_option_price'] = put_option_price_today
+        daily_snapshot['options_total_value'] = options_market_value
+        daily_snapshot['options_total_lots'] = options_total_lots_today
         daily_log.append(daily_snapshot)
 
     # --- 结果整合与输出 ---
