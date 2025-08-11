@@ -11,6 +11,8 @@ warnings.filterwarnings('ignore')
 # 入场相关
 START_DATE_STR = '2024-05-01'
 INITIAL_CAPITAL = 1_000_000  # 初始资金
+# 开仓价格模式: 'open' 或 'close'。为提升首日收益与K线的一致性，默认使用收盘价执行开仓
+START_PRICE_MODE = 'close'
 
 # 头寸相关
 FUTURES_INITIAL_LOTS = 100
@@ -28,8 +30,8 @@ FUTURES_MAX_LOTS = 300
 FUTURES_MIN_LOTS = 0
 
 # 交易成本
-COMMISSION_FUTURES = 2.0  # 每手期货单边手续费
-COMMISSION_OPTIONS = 1.0  # 每手期权单边手续费
+COMMISSION_FUTURES = 3.0  # 每手期货单边手续费
+COMMISSION_OPTIONS = 0.5  # 每手期权单边手续费
 SLIPPAGE = 1  # 滑点, 按价格点计算 (暂未在逻辑中实现)
 
 # --- 2. 文件路径 ---
@@ -71,63 +73,225 @@ def plot_results(daily_log_df, trade_log_df):
         print("没有数据可供可视化。")
         return
 
+    # 关键指标计算
+    equity = daily_log_df['total_value']
+    returns = equity.pct_change()
+    returns = returns.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    running_max = equity.cummax()
+    drawdown = (equity - running_max) / running_max
+    max_drawdown = float(drawdown.min()) if len(drawdown) else 0.0
+    ann_factor = 252
+    vol_annual = float(returns.std(ddof=0) * np.sqrt(ann_factor)) if len(returns) > 1 else 0.0
+    ann_return = float(returns.mean() * ann_factor) if len(returns) > 1 else 0.0
+    sharpe = float(ann_return / vol_annual) if vol_annual > 0 else 0.0
+    total_return = float(equity.iloc[-1] / equity.iloc[0] - 1) if len(equity) > 1 else 0.0
+    # CAGR 估算
+    num_days = len(equity)
+    years = num_days / ann_factor if num_days > 1 else 0
+    cagr = float((equity.iloc[-1] / equity.iloc[0]) ** (1 / years) - 1) if years > 0 else 0.0
+    # Sortino（使用下行波动）
+    downside = returns.copy()
+    downside[downside > 0] = 0.0
+    downside_std_ann = float(downside.std(ddof=0) * np.sqrt(ann_factor)) if len(downside) > 1 else 0.0
+    sortino = float(ann_return / downside_std_ann) if downside_std_ann > 0 else 0.0
+    # Calmar
+    calmar = float(ann_return / abs(max_drawdown)) if max_drawdown < 0 else 0.0
+    # 日度胜率与利润因子（以每日PnL近似）
+    daily_pnl = daily_log_df['daily_pnl'] if 'daily_pnl' in daily_log_df.columns else pd.Series(index=daily_log_df.index, dtype=float).fillna(0)
+    win_rate = float((daily_pnl > 0).mean()) if len(daily_pnl) > 0 else 0.0
+    gross_profit = float(daily_pnl[daily_pnl > 0].sum())
+    gross_loss = float(daily_pnl[daily_pnl < 0].sum())
+    profit_factor = float(gross_profit / abs(gross_loss)) if gross_loss < 0 else np.nan
+    # 其余信息
+    num_trades = int(len(trade_log_df)) if trade_log_df is not None else 0
+    start_dt = daily_log_df.index.min()
+    end_dt = daily_log_df.index.max()
+
     fig = make_subplots(
-        rows=4, cols=1,
+        rows=5, cols=1,
         shared_xaxes=True,
         vertical_spacing=0.05,
-        subplot_titles=('期货价格与网格交易点', '账户净值曲线 (Equity Curve)', '期货持仓手数', '每日盈亏 (Daily PnL)'),
-        row_heights=[0.4, 0.2, 0.2, 0.2]
+        subplot_titles=(
+            '期货价格与网格交易点',
+            '账户净值曲线 (Equity Curve)',
+            '期货持仓手数',
+            '每日盈亏 (Daily PnL)',
+            '关键指标与说明'
+        ),
+        row_heights=[0.38, 0.22, 0.16, 0.16, 0.12],
+        specs=[[{"type": "xy"}],
+               [{"type": "xy"}],
+               [{"type": "xy"}],
+               [{"type": "xy"}],
+               [{"type": "table"}]]
     )
 
     # --- 子图1: 期货价格与交易信号 ---
-    # K线图
-    fig.add_trace(go.Candlestick(x=daily_log_df.index,
-                                open=daily_log_df['futures_open'],
-                                high=daily_log_df['futures_high'],
-                                low=daily_log_df['futures_low'],
-                                close=daily_log_df['futures_close'],
-                                name='期货K线'), row=1, col=1)
+    # K线图（移除不兼容的 hovertemplate，使用默认悬浮信息）
+    fig.add_trace(
+        go.Candlestick(
+            x=daily_log_df.index,
+            open=daily_log_df['futures_open'],
+            high=daily_log_df['futures_high'],
+            low=daily_log_df['futures_low'],
+            close=daily_log_df['futures_close'],
+            name='期货K线'
+        ),
+        row=1, col=1
+    )
 
     # 交易信号
     buy_signals = daily_log_df[daily_log_df['trade_action'].str.contains("buy", na=False)]
     sell_signals = daily_log_df[daily_log_df['trade_action'].str.contains("sell", na=False)]
     
-    fig.add_trace(go.Scatter(x=buy_signals.index, y=buy_signals['futures_close'], mode='markers',
-                             marker=dict(color='red', symbol='arrow-up', size=10, line=dict(width=2, color='DarkSlateGrey')),
-                             name='买入/加仓'), row=1, col=1)
-    
-    fig.add_trace(go.Scatter(x=sell_signals.index, y=sell_signals['futures_close'], mode='markers',
-                             marker=dict(color='limegreen', symbol='arrow-down', size=10, line=dict(width=2, color='DarkSlateGrey')),
-                             name='卖出/减仓'), row=1, col=1)
+    # 用于自定义提示的数据列（兼容无 trade_price/commission 的情况）
+    trade_price_series = daily_log_df['trade_price'] if 'trade_price' in daily_log_df.columns else daily_log_df['futures_close']
 
-    fig.update_yaxes(title_text="价格", row=1, col=1)
+    fig.add_trace(
+        go.Scatter(
+            x=buy_signals.index,
+            y=buy_signals['futures_close'],
+            mode='markers',
+            marker=dict(color='red', symbol='triangle-up', size=10, line=dict(width=1, color='DarkSlateGrey')),
+            name='买入/加仓',
+            text=[
+                f"日期: {idx:%Y-%m-%d}<br>动作: {act}<br>手数: {abs(int(lots))}<br>成交价: {px:.2f}"
+                for idx, act, lots, px in zip(
+                    buy_signals.index,
+                    buy_signals['trade_action'],
+                    buy_signals['trade_lots'],
+                    trade_price_series.loc[buy_signals.index]
+                )
+            ],
+            hoverinfo='text'
+        ),
+        row=1, col=1
+    )
+    
+    fig.add_trace(
+        go.Scatter(
+            x=sell_signals.index,
+            y=sell_signals['futures_close'],
+            mode='markers',
+            marker=dict(color='limegreen', symbol='triangle-down', size=10, line=dict(width=1, color='DarkSlateGrey')),
+            name='卖出/减仓',
+            text=[
+                f"日期: {idx:%Y-%m-%d}<br>动作: {act}<br>手数: {abs(int(lots))}<br>成交价: {px:.2f}"
+                for idx, act, lots, px in zip(
+                    sell_signals.index,
+                    sell_signals['trade_action'],
+                    sell_signals['trade_lots'],
+                    trade_price_series.loc[sell_signals.index]
+                )
+            ],
+            hoverinfo='text'
+        ),
+        row=1, col=1
+    )
+
+    fig.update_yaxes(title_text="价格", row=1, col=1, tickformat=',.2f', showgrid=True, gridcolor='LightGray')
 
     # --- 子图2: 账户净值曲线 ---
-    fig.add_trace(go.Scatter(x=daily_log_df.index, y=daily_log_df['total_value'], name='账户总净值',
-                             line=dict(color='orange', width=2)), row=2, col=1)
-    fig.update_yaxes(title_text="净值 ($)", row=2, col=1)
+    fig.add_trace(
+        go.Scatter(
+            x=daily_log_df.index,
+            y=daily_log_df['total_value'],
+            name='账户总净值',
+            line=dict(color='orange', width=2),
+            text=[f"日期: {idx:%Y-%m-%d}<br>净值: {val:,.2f}" for idx, val in zip(daily_log_df.index, daily_log_df['total_value'])],
+            hoverinfo='text'
+        ),
+        row=2, col=1
+    )
+    fig.update_yaxes(title_text="净值 ($)", row=2, col=1, tickformat=',.2f', showgrid=True, gridcolor='LightGray')
+
+    # 增加基准（期货价格标准化）以便对比走势
+    if 'futures_close' in daily_log_df.columns and len(daily_log_df) > 0:
+        base_price = float(daily_log_df['futures_close'].iloc[0])
+        if base_price > 0:
+            benchmark_equity = daily_log_df['futures_close'] / base_price * INITIAL_CAPITAL
+            fig.add_trace(
+                go.Scatter(
+                    x=daily_log_df.index,
+                    y=benchmark_equity,
+                    name='基准(期货标准化)',
+                    line=dict(color='steelblue', width=1, dash='dot'),
+                    text=[f"日期: {idx:%Y-%m-%d}<br>基准净值: {val:,.2f}" for idx, val in zip(daily_log_df.index, benchmark_equity)],
+                    hoverinfo='text'
+                ),
+                row=2, col=1
+            )
 
     # --- 子图3: 期货持仓手数 ---
-    fig.add_trace(go.Scatter(x=daily_log_df.index, y=daily_log_df['futures_lots'], name='期货持仓手数',
-                             fill='tozeroy', mode='lines', line=dict(color='grey', width=1)), row=3, col=1)
-    fig.update_yaxes(title_text="手数", row=3, col=1)
+    fig.add_trace(
+        go.Scatter(
+            x=daily_log_df.index,
+            y=daily_log_df['futures_lots'],
+            name='期货持仓手数',
+            fill='tozeroy',
+            mode='lines',
+            line=dict(color='grey', width=1),
+            text=[f"日期: {idx:%Y-%m-%d}<br>持仓手数: {val:,.0f}" for idx, val in zip(daily_log_df.index, daily_log_df['futures_lots'])],
+            hoverinfo='text'
+        ),
+        row=3, col=1
+    )
+    fig.update_yaxes(title_text="手数", row=3, col=1, tickformat=',.0f', showgrid=True, gridcolor='LightGray')
 
     # --- 子图4: 每日盈亏 ---
     colors = ['limegreen' if pnl >= 0 else 'red' for pnl in daily_log_df['daily_pnl']]
-    fig.add_trace(go.Bar(x=daily_log_df.index, y=daily_log_df['daily_pnl'], name='每日盈亏',
-                         marker_color=colors), row=4, col=1)
-    fig.update_yaxes(title_text="盈亏 ($)", row=4, col=1)
+    fig.add_trace(
+        go.Bar(
+            x=daily_log_df.index,
+            y=daily_log_df['daily_pnl'],
+            name='每日盈亏',
+            marker_color=colors,
+            text=[f"日期: {idx:%Y-%m-%d}<br>每日盈亏: {val:,.2f}" for idx, val in zip(daily_log_df.index, daily_log_df['daily_pnl'])],
+            hoverinfo='text'
+        ),
+        row=4, col=1
+    )
+    fig.update_yaxes(title_text="盈亏 ($)", row=4, col=1, tickformat=',.2f', showgrid=True, gridcolor='LightGray')
     
     # --- 整体布局设置 ---
     fig.update_layout(
         title_text='<b>受保护的期货逆势网格策略 - 回测分析报告</b>',
-        height=1200,
+        height=2000,
         legend_title='图例',
         showlegend=True,
         xaxis_rangeslider_visible=False,
-        template='plotly_white'
+        template='plotly_white',
+        hovermode='closest'
     )
-    fig.update_xaxes(title_text='日期', row=4, col=1)
+    fig.update_xaxes(title_text='日期', row=4, col=1, showgrid=True, gridcolor='LightGray')
+
+    # --- 子图5: 关键指标与说明 ---
+    metrics_header = ['指标', '取值']
+    metrics_rows = [
+        ['开始日期', start_dt.strftime('%Y-%m-%d') if not pd.isna(start_dt) else '-'],
+        ['结束日期', end_dt.strftime('%Y-%m-%d') if not pd.isna(end_dt) else '-'],
+        ['交易日数', f"{num_days}"],
+        ['总回报率', f"{total_return:.2%}"],
+        ['年化收益率', f"{ann_return:.2%}"],
+        ['CAGR', f"{cagr:.2%}"],
+        ['最大回撤', f"{max_drawdown:.2%}"],
+        ['年化波动率', f"{vol_annual:.2%}"],
+        ['夏普比率(0RF)', f"{sharpe:.2f}"],
+        ['Sortino', f"{sortino:.2f}"],
+        ['Calmar', f"{calmar:.2f}"],
+        ['日度胜率', f"{win_rate:.2%}"],
+        ['Profit Factor(按日)', f"{profit_factor:.2f}" if not np.isnan(profit_factor) else 'NA'],
+        ['交易次数', f"{num_trades}"],
+    ]
+
+    table_cells = list(map(list, zip(*metrics_rows)))
+    fig.add_trace(
+        go.Table(
+            header=dict(values=metrics_header, fill_color='lightgrey', align='left'),
+            cells=dict(values=table_cells, align='left')
+        ),
+        row=5, col=1
+    )
 
     # --- 保存图表 ---
     if not os.path.exists(RESULTS_DIR):
@@ -154,13 +318,22 @@ def run_backtest_event_driven(futures_df, options_df):
     start_date = all_trading_days[all_trading_days >= pd.to_datetime(START_DATE_STR)][0]
     option_expiry_date = options_df.index.max()
     
-    # 基准价格
-    # 确保开仓参考价为标量（若同日多行，取第一行）
+    # 基准价格（确保为标量；同日多行取第一行）
     entry_row = futures_df.loc[start_date]
     if isinstance(entry_row, pd.DataFrame):
-        entry_price = float(entry_row['open'].iloc[0])
+        start_open = float(entry_row['open'].iloc[0])
+        start_close = float(entry_row['close'].iloc[0])
     else:
-        entry_price = float(entry_row['open'])
+        start_open = float(entry_row['open'])
+        start_close = float(entry_row['close'])
+
+    # 作为网格基准与首日执行价参考
+    if START_PRICE_MODE == 'close':
+        entry_price = start_close
+    else:
+        entry_price = start_open
+    
+    # 净值口径：从策略启动前一天的权益=初始资金开始，首日盈亏仅反映从建仓价到首日收盘的变化
     last_total_value = INITIAL_CAPITAL
 
     # --- 开始每日循环 ---
@@ -189,7 +362,10 @@ def run_backtest_event_driven(futures_df, options_df):
             'futures_lots': futures_lots,
             'trade_action': '',
             'trade_lots': 0,
-            'daily_pnl': 0
+            'trade_price': np.nan,
+            'commission_paid': 0.0,
+            'daily_pnl': 0,
+            'cash': cash
         }
         
         # --- 开仓日逻辑 ---
@@ -202,7 +378,8 @@ def run_backtest_event_driven(futures_df, options_df):
             commission = FUTURES_INITIAL_LOTS * COMMISSION_FUTURES
             cash -= (cost + commission)
             trade_log.append({'date': today, 'action': 'buy_futures_initial', 'lots': FUTURES_INITIAL_LOTS, 'price': trade_price, 'commission': commission})
-            daily_snapshot.update({'trade_action': 'buy_futures_initial', 'trade_lots': FUTURES_INITIAL_LOTS})
+            daily_snapshot.update({'trade_action': 'buy_futures_initial', 'trade_lots': FUTURES_INITIAL_LOTS, 'trade_price': trade_price, 'commission_paid': commission})
+            print(f"[期货建仓] 日期: {today.date()} | 买入手数: {FUTURES_INITIAL_LOTS} | 价格: {trade_price:.2f} | 手续费: {commission:.2f} | 现金余额: {cash:,.2f}")
 
             # 2. 建立期权保护头寸
             target_strike = entry_price + STRIKE_PRICE_OFFSET
@@ -227,7 +404,8 @@ def run_backtest_event_driven(futures_df, options_df):
             commission = PUT_OPTION_LOTS * COMMISSION_OPTIONS
             cash -= (cost + commission)
             options_position[option_strike] = {'lots': PUT_OPTION_LOTS, 'entry_price': option_price}
-            trade_log.append({'date': today, 'action': 'buy_put_option', 'lots': PUT_OPTION_LOTS, 'price': option_price, 'commission': commission})
+            trade_log.append({'date': today, 'action': 'buy_put_option', 'lots': PUT_OPTION_LOTS, 'price': option_price, 'commission': commission, 'strike': option_strike})
+            print(f"[保护期权] 日期: {today.date()} | 买入看跌: {PUT_OPTION_LOTS} 手 | 价格: {option_price:.2f} | 行权价: {option_strike:.2f} | 手续费: {commission:.2f} | 现金余额: {cash:,.2f}")
             print(f"策略于 {start_date.date()} 启动。期货@{trade_price:.2f}, 期权@{option_price:.2f}(行权价{option_strike})")
 
         # --- 持仓调整逻辑 (非开仓日/平仓日) ---
@@ -245,8 +423,9 @@ def run_backtest_event_driven(futures_df, options_df):
             else:
                 target_lots = FUTURES_INITIAL_LOTS
             
-            lots_to_trade = int(target_lots - futures_lots) # 确保为整数
+            lots_to_trade = int(target_lots - futures_lots)  # 确保为整数
             
+            # 仅当买入卖出方向发生切换时，跳过当日信号，避免同日既买又卖的频繁来回（去抖动）
             if lots_to_trade != 0:
                 trade_price = futures_close
                 commission = abs(lots_to_trade) * COMMISSION_FUTURES
@@ -268,7 +447,9 @@ def run_backtest_event_driven(futures_df, options_df):
                     futures_lots += lots_to_trade
                 
                 trade_log.append({'date': today, 'action': action, 'lots': lots_to_trade, 'price': trade_price, 'commission': commission})
-                daily_snapshot.update({'trade_action': action, 'trade_lots': lots_to_trade})
+                daily_snapshot.update({'trade_action': action, 'trade_lots': lots_to_trade, 'trade_price': trade_price, 'commission_paid': commission})
+                side_cn = '买入' if lots_to_trade > 0 else '卖出'
+                print(f"[网格调仓] 日期: {today.date()} | {side_cn}手数: {abs(lots_to_trade)} | 价格: {trade_price:.2f} | 手续费: {commission:.2f} | 当前持仓: {futures_lots} | 现金余额: {cash:,.2f}")
 
         # --- 平仓日逻辑 ---
         if today == option_expiry_date:
@@ -280,7 +461,8 @@ def run_backtest_event_driven(futures_df, options_df):
                 commission = abs(futures_lots) * COMMISSION_FUTURES
                 cash -= commission
                 trade_log.append({'date': today, 'action': 'sell_futures_final', 'lots': -futures_lots, 'price': futures_close, 'commission': commission})
-                daily_snapshot.update({'trade_action': 'sell_futures_final', 'trade_lots': -futures_lots})
+                daily_snapshot.update({'trade_action': 'sell_futures_final', 'trade_lots': -futures_lots, 'trade_price': futures_close, 'commission_paid': commission})
+                print(f"[期货平仓] 日期: {today.date()} | 卖出手数: {abs(futures_lots)} | 价格: {futures_close:.2f} | 手续费: {commission:.2f} | 现金余额: {cash:,.2f}")
                 futures_lots = 0
 
             # 2. 平期权
@@ -293,7 +475,8 @@ def run_backtest_event_driven(futures_df, options_df):
                 cash += revenue
                 commission = pos['lots'] * COMMISSION_OPTIONS
                 cash -= commission
-                trade_log.append({'date': today, 'action': 'sell_option_final', 'lots': -pos['lots'], 'price': final_opt_price, 'commission': commission})
+                trade_log.append({'date': today, 'action': 'sell_option_final', 'lots': -pos['lots'], 'price': final_opt_price, 'commission': commission, 'strike': strike})
+                print(f"[期权平仓] 日期: {today.date()} | 卖出看跌: {pos['lots']} 手 | 价格: {final_opt_price:.2f} | 行权价: {strike:.2f} | 手续费: {commission:.2f} | 现金余额: {cash:,.2f}")
             options_position.clear()
 
         # --- 每日市值计算 (Mark-to-Market) ---
@@ -319,6 +502,9 @@ def run_backtest_event_driven(futures_df, options_df):
         daily_snapshot['futures_lots'] = futures_lots
         daily_snapshot['total_value'] = total_value
         daily_snapshot['daily_pnl'] = daily_pnl
+        daily_snapshot['cash'] = cash
+        daily_snapshot['futures_market_value'] = futures_market_value
+        daily_snapshot['options_market_value'] = options_market_value
         daily_log.append(daily_snapshot)
 
     # --- 结果整合与输出 ---
