@@ -10,7 +10,7 @@ warnings.filterwarnings('ignore')
 # --- 1. 策略核心参数 ---
 # 入场相关
 START_DATE_STR = '2024-05-01'
-INITIAL_CAPITAL = 10_000_0  # 初始资金
+INITIAL_CAPITAL = 1_000_000  # 初始资金
 
 # 头寸相关
 FUTURES_INITIAL_LOTS = 100
@@ -155,7 +155,12 @@ def run_backtest_event_driven(futures_df, options_df):
     option_expiry_date = options_df.index.max()
     
     # 基准价格
-    entry_price = futures_df.loc[start_date, 'open']
+    # 确保开仓参考价为标量（若同日多行，取第一行）
+    entry_row = futures_df.loc[start_date]
+    if isinstance(entry_row, pd.DataFrame):
+        entry_price = float(entry_row['open'].iloc[0])
+    else:
+        entry_price = float(entry_row['open'])
     last_total_value = INITIAL_CAPITAL
 
     # --- 开始每日循环 ---
@@ -201,9 +206,18 @@ def run_backtest_event_driven(futures_df, options_df):
 
             # 2. 建立期权保护头寸
             target_strike = entry_price + STRIKE_PRICE_OFFSET
-            options_today = options_df.loc[today]
+            # 安全获取当日期权数据，若无则回退至最近一个不晚于今日的交易日
+            options_today = options_df.loc[options_df.index.isin([today])]
+            if options_today.empty:
+                prev_dates = options_df.index[options_df.index <= today]
+                if prev_dates.empty:
+                    raise ValueError(f"开仓日之前无可用期权数据: {today.date()}")
+                nearest = prev_dates.max()
+                options_today = options_df.loc[options_df.index.isin([nearest])]
+
             put_options = options_today[options_today['option_type'] == 'put']
-            if put_options.empty: raise ValueError(f"在 {today.date()} 找不到看跌期权")
+            if put_options.empty:
+                raise ValueError(f"在 {today.date()} 及之前最近可用交易日未找到看跌期权")
             
             best_option = put_options.iloc[(put_options['strike_price'] - target_strike).abs().argsort()[:1]].iloc[0]
             option_price = best_option['close']
