@@ -9,7 +9,7 @@ warnings.filterwarnings('ignore')
 
 # --- 1. 策略核心参数 ---
 # 入场相关
-START_DATE_STR = '2024-05-01'
+START_DATE_STR = '2024-01-15'
 INITIAL_CAPITAL = 2_000_000  # 初始资金
 # 开仓价格模式: 'open' 或 'close'。为提升首日收益与K线的一致性，默认使用收盘价执行开仓
 START_PRICE_MODE = 'close'
@@ -42,9 +42,9 @@ COMMISSION_OPTIONS = 0.5  # 每手期权单边手续费
 SLIPPAGE = 1  # 滑点, 按价格点计算 (暂未在逻辑中实现)
 
 # --- 2. 文件路径 ---
-FUTURES_DATA_PATH = 'Protected_Futures_Reverse_Grid_Strategy/data/PTA2409/futures_data.csv'
-OPTIONS_DATA_PATH = 'Protected_Futures_Reverse_Grid_Strategy/data/PTA2409/options_data.csv'
-RESULTS_DIR = 'Protected_Futures_Reverse_Grid_Strategy/backtest_results'
+FUTURES_DATA_PATH = 'Protected_Futures_Reverse_Grid_Strategy/data/PTA2405/futures_data.csv'
+OPTIONS_DATA_PATH = 'Protected_Futures_Reverse_Grid_Strategy/data/PTA2405/options_data.csv'
+RESULTS_DIR = 'Protected_Futures_Reverse_Grid_Strategy/backtest_results/PTA2405'
 
 # --- 3. 数据准备 ---
 def prepare_data(futures_path, options_path):
