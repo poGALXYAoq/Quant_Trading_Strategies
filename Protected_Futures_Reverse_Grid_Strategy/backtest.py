@@ -268,7 +268,7 @@ def plot_results(daily_log_df, trade_log_df):
     
     # --- 整体布局设置 ---
     fig.update_layout(
-        title_text='<b>受保护的期货逆势网格策略 - 回测分析报告</b>',
+        title_text=PLOT_TITLE,
         height=2200,
         legend_title='图例',
         showlegend=True,
@@ -334,7 +334,7 @@ def plot_results(daily_log_df, trade_log_df):
     # --- 保存图表 ---
     if not os.path.exists(RESULTS_DIR):
         os.makedirs(RESULTS_DIR)
-    plot_path = os.path.join(RESULTS_DIR, 'interactive_backtest_dashboard.html')
+    plot_path = os.path.join(RESULTS_DIR, PLOT_NAME)
     fig.write_html(plot_path)
     print(f"专业版交互式图表已保存至: {plot_path}")
 
