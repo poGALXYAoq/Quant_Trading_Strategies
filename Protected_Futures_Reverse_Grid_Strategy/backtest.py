@@ -600,13 +600,11 @@ def run_backtest_event_driven(futures_df, options_df):
 
     # --- 结果整合与输出 ---
     daily_log_df = pd.DataFrame(daily_log).set_index('date')
-    trade_log_df = pd.DataFrame(trade_log)
 
     if not os.path.exists(RESULTS_DIR):
         os.makedirs(RESULTS_DIR)
         
     daily_log_df.to_csv(os.path.join(RESULTS_DIR, 'daily_log.csv'))
-    trade_log_df.to_csv(os.path.join(RESULTS_DIR, 'trade_log.csv'), index=False)
     
     print("\n--- 回测性能总结 ---")
     final_equity = daily_log_df['total_value'].iloc[-1]
