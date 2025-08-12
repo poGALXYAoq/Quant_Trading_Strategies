@@ -61,9 +61,9 @@ if __name__ == '__main__':
     # 您可以修改这些路径来处理不同的文件
     
     # 示例1: 处理您选择的PTA数据
-    source_file = 'Protected_Futures_Reverse_Grid_Strategy/data/PTA2409/PTA2409.csv'
+    source_file = 'ETL\data\PTA2501.csv'
     # 将其转换为回测脚本默认读取的 futures_data.csv
-    output_file = 'Protected_Futures_Reverse_Grid_Strategy/data/PTA2409/futures_data.csv'
+    output_file = 'Protected_Futures_Reverse_Grid_Strategy/data/PTA2501/futures_data.csv'
     
     print("--- 开始转换任务 ---")
     transform_futures_data(source_file, output_file)

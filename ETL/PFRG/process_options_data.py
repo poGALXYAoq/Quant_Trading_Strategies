@@ -98,16 +98,16 @@ if __name__ == '__main__':
     
     # 1. 指定您想处理的合约前缀
     # 例如, 对于 PTA 2409 合约, 其代码通常以 'TA409' 开头
-    TARGET_CONTRACT = 'TA409' # 这是一个示例, 请根据您的文件名和数据内容进行修改
+    TARGET_CONTRACT = 'TA501' # 这是一个示例, 请根据您的文件名和数据内容进行修改
 
     # 2. 定义文件路径
-    SOURCE_OPTIONS_FILE = 'Protected_Futures_Reverse_Grid_Strategy/data/PTA2409/ta_option_data_2020_2024.csv'
+    SOURCE_OPTIONS_FILE = 'ETL\data\\ta_option_data_2020_2024.csv'
     
     # 这个文件必须是已存在的、格式化后的期货数据
-    FUTURES_DATA_FILE = 'Protected_Futures_Reverse_Grid_Strategy/data/PTA2409/futures_data.csv' 
+    FUTURES_DATA_FILE = 'Protected_Futures_Reverse_Grid_Strategy/data/PTA2501/futures_data.csv' 
     
     # 这是最终生成的、可用于回测的期权数据文件
-    OUTPUT_OPTIONS_FILE = 'Protected_Futures_Reverse_Grid_Strategy/data/PTA2409/options_data.csv'
+    OUTPUT_OPTIONS_FILE = 'Protected_Futures_Reverse_Grid_Strategy/data/PTA2501/options_data.csv'
     
     # --- 执行转换 ---
     # 在运行前, 请确保已有一个格式正确的 futures_data.csv 文件存在
