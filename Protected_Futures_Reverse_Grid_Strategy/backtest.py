@@ -604,6 +604,7 @@ def run_backtest_event_driven(futures_df, options_df):
 
     # --- 结果整合与输出 ---
     daily_log_df = pd.DataFrame(daily_log).set_index('date')
+    trade_log_df = pd.DataFrame(trade_log)
 
     if not os.path.exists(RESULTS_DIR):
         os.makedirs(RESULTS_DIR)
