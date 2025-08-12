@@ -217,3 +217,5 @@ __marimo__/
 
 # 忽略数据的获取
 TA_option_data.ipynb
+
+/.idea/
