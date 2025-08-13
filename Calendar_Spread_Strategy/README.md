@@ -1,6 +1,5 @@
 # Calendar_Spread_Strategy
 
-<<<<<<< Current (Your changes)
 回测的整体思路和框架：
 
 ### 回测框架三大核心：数据、策略、执行
@@ -97,7 +96,6 @@
   - `标的开盘价`、`标的收盘价`
   - `今结算`（用于回测核心价格）
 
-提示：在 Linux 环境下，将脚本中的反斜杠路径改为正斜杠，或在脚本内改为 `os.path.join`。
 
 ## 快速开始
 - 全参数回测（`backtest.py`）：
@@ -152,4 +150,3 @@ pip install -U pandas numpy matplotlib seaborn joblib tqdm
 ## 备注
 - 若数据中结算价为 0，代码会在开仓时将其替换为 0.5 以避免无法成交的异常情况。
 - 若部分交易日缺少当日标的或个别合约报价，代码会使用可得的信息进行稳健回退处理。
->>>>>>> Incoming (Background Agent changes)
