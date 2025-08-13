@@ -9,8 +9,8 @@ warnings.filterwarnings('ignore')
 
 # --- 1. 策略核心参数 ---
 # 入场相关
-START_DATE_STR = '2024-09-01'
-INITIAL_CAPITAL = 1_000_000  # 初始资金
+START_DATE_STR = '2024-06-22'
+INITIAL_CAPITAL = 100_000  # 初始资金
 # 开仓价格模式: 'open' 或 'close'。为提升首日收益与K线的一致性，默认使用收盘价执行开仓
 START_PRICE_MODE = 'close'
 # 期权行权价选择方式:
@@ -42,12 +42,12 @@ COMMISSION_OPTIONS = 0.5  # 每手期权单边手续费
 SLIPPAGE = 1  # 滑点, 按价格点计算 (暂未在逻辑中实现)
 
 # 可视化
-PLOT_TITLE = '<b>受保护的期货逆势网格策略 - PTA2501分析报告</b>' # 图表标题, 支持<b>加粗</b>等HTML标签
-PLOT_NAME = 'PTA2501分析报告.html'
+PLOT_TITLE = '<b>受保护的期货逆势网格策略 - FG2409分析报告</b>' # 图表标题, 支持<b>加粗</b>等HTML标签
+PLOT_NAME = 'FG2409分析报告.html'
 # --- 2. 文件路径 ---
-FUTURES_DATA_PATH = 'Protected_Futures_Reverse_Grid_Strategy/data/PTA2501/futures_data.csv'
-OPTIONS_DATA_PATH = 'Protected_Futures_Reverse_Grid_Strategy/data/PTA2501/options_data.csv'
-RESULTS_DIR = 'Protected_Futures_Reverse_Grid_Strategy/backtest_results/PTA2501'
+FUTURES_DATA_PATH = 'Protected_Futures_Reverse_Grid_Strategy/data/FG2409/futures_data.csv'
+OPTIONS_DATA_PATH = 'Protected_Futures_Reverse_Grid_Strategy/data/FG2409/options_data.csv'
+RESULTS_DIR = 'Protected_Futures_Reverse_Grid_Strategy/backtest_results/FG2409'
 
 
 # --- 3. 数据准备 ---
