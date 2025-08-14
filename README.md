@@ -68,10 +68,6 @@ python Protected_Futures_Reverse_Grid_Strategy/backtest.py
 | 受保护的期货逆势网格策略 | 以期货多头为基，买入虚值看跌保护；按网格对期货头寸逆势加减仓；期权持仓持有至到期 | `Protected_Futures_Reverse_Grid_Strategy/` |
 | 期权跨期价差（Calendar Spread） | 近月卖出、远月买入，同步选择行权价，参数网格遍历 k 与 N | `Calendar_Spread_Strategy/` |
 
-<<<<<<< Current (Your changes)
-**投资有风险，入市需谨慎。**
-=======
 ## 免责声明
 - 本仓库所有内容仅供学习与研究，不构成任何投资建议。
 - 金融市场风险较高，历史回测不代表未来表现。任何由此产生的实际交易风险自负。
->>>>>>> Incoming (Background Agent changes)
