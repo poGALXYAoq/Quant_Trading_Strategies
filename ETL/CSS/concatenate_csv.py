@@ -59,34 +59,13 @@ if __name__ == "__main__":
     
     # 输入文件路径列表 (可以包含任意数量的文件)
     INPUT_FILES = [
-        "上期所合约行情报表2023\SHFE_2023_1.csv",
-        "上期所合约行情报表2023\SHFE_2023_2.csv",
-        "上期所合约行情报表2023\SHFE_2023_3.csv",
-        "上期所合约行情报表2023\SHFE_2023_4.csv",
-        "上期所合约行情报表2023\SHFE_2023_5.csv",
-        "上期所合约行情报表2023\SHFE_2023_6.csv",
-        "上期所合约行情报表2023\SHFE_2023_7.csv",
-        "上期所合约行情报表2023\SHFE_2023_8.csv",
-        "上期所合约行情报表2023\SHFE_2023_9.csv",
-        "上期所合约行情报表2023\SHFE_2023_10.csv",
-        "上期所合约行情报表2023\SHFE_2023_11.csv",
-        "上期所合约行情报表2023\SHFE_2023_12.csv",
-        "上期所合约行情报表2024\SHFE_2024_1.csv",
-        "上期所合约行情报表2024\SHFE_2024_2.csv",
-        "上期所合约行情报表2024\SHFE_2024_3.csv",
-        "上期所合约行情报表2024\SHFE_2024_4.csv",
-        "上期所合约行情报表2024\SHFE_2024_5.csv",
-        "上期所合约行情报表2024\SHFE_2024_6.csv",
-        "上期所合约行情报表2024\SHFE_2024_7.csv",
-        "上期所合约行情报表2024\SHFE_2024_8.csv",
-        "上期所合约行情报表2024\SHFE_2024_9.csv",
-        "上期所合约行情报表2024\SHFE_2024_10.csv",
-        "上期所合约行情报表2024\SHFE_2024_11.csv",
-        "上期所合约行情报表2024\SHFE_2024_12.csv",
+        "D:\code\Quant_Trading_Strategies\Volatility_Prediction_Strategy\data\option_CSI300_2020.csv",
+        "D:\code\Quant_Trading_Strategies\Volatility_Prediction_Strategy\data\option_CSI300_2021-22.csv",
+        "D:\code\Quant_Trading_Strategies\Volatility_Prediction_Strategy\data\option_CSI300_2023-24.csv"
     ]
     
     # 合并后输出文件的路径
-    OUTPUT_FILE = "SHFE_opt_2023_2024.csv"
+    OUTPUT_FILE = "D:\code\Quant_Trading_Strategies\Volatility_Prediction_Strategy\data\option_CSI300_2020-24.csv"
     # -------------------------
 
     concatenate_csv_files(INPUT_FILES, OUTPUT_FILE)
