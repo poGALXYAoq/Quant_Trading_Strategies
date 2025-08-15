@@ -2,8 +2,14 @@ import os
 import pandas as pd
 import yaml
 
-from .engine import LongStraddleBacktester
-from .metrics import compute_metrics
+try:
+	from .engine import LongStraddleBacktester
+	from .metrics import compute_metrics
+except ImportError:
+	import sys, os
+	sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+	from backtest.engine import LongStraddleBacktester
+	from backtest.metrics import compute_metrics
 
 
 def main():

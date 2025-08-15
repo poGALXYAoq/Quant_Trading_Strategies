@@ -4,7 +4,13 @@ import os
 import pandas as pd
 import numpy as np
 
-from ..execution.selection import pick_near_dte_options
+try:
+	from ..execution.selection import pick_near_dte_options
+except ImportError:
+	try:
+		from execution.selection import pick_near_dte_options
+	except ImportError:
+		from Volatility_Prediction_Strategy.execution.selection import pick_near_dte_options
 
 
 @dataclass
