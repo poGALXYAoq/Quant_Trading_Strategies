@@ -1,0 +1,44 @@
+paths:
+  data_dir: Volatility_Prediction_Strategy/data
+  output_dir: Volatility_Prediction_Strategy/data/derived
+  underlying_csv: Volatility_Prediction_Strategy/data/CSI300.csv
+  options_glob: Volatility_Prediction_Strategy/data/option_CSI300_*.csv
+  rates_csv: Volatility_Prediction_Strategy/data/interbank_offered_rate.csv
+
+rates:
+  tenor_preference: "1M"
+  annualization_days: 252
+
+vol_targets:
+  target_dte_days: 30
+  secondary_target_dte_days: 60
+
+filters:
+  min_open_interest: 100
+  min_volume: 1
+  max_abs_moneyness_pct: 0.1
+
+iv_inversion:
+  initial_iv: 0.2
+  tolerance: 1.0e-6
+  max_iterations: 100
+  min_iv: 0.0001
+  max_iv: 5.0
+  dividend_yield_annual: 0.0
+
+execution:
+  use_open_for_entry: true
+  use_open_for_exit: false
+  slippage_per_leg: 0.5
+  fee_per_lot: 1.0
+  avoid_open_new_when_dte_leq: 3
+
+labels:
+  epsilon_quantile: 0.6
+  rolling_window_days: 252
+  realized_vol_window_days: 30
+  annualize_realized_vol: true
+
+backtest:
+  holding_period_days: 10
+  pre_expiry_buffer_days: 3

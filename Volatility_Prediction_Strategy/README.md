@@ -66,6 +66,32 @@ notebook的大致流程将会是：load data, train model, predict, backtest, an
 - 评估与可视化 `report/`：绩效指标、曲线、因子贡献与敏感度分析。
 - 配置 `config/`：标的、交易日历、费率、阈值、风控参数等等。
 
+### 目录结构（当前）
+
+```
+Volatility_Prediction_Strategy/
+  ├─ data/
+  │   ├─ CSI300.csv
+  │   ├─ option_CSI300_2020-24.csv
+  │   ├─ interbank_offered_rate.csv
+  │   └─ derived/
+  ├─ features/
+  │   ├─ iv_utils.py                # ts_code解析、到期日/交易日、BSM/IV/Greeks
+  │   ├─ build_derived_tables.py    # 读取三表→派生字段→反推IV→Greeks→导出
+  │   ├─ build_factors.py           # 计算HV/ATM_IV/TERM/SKEW/PCR等因子
+  │   └─ build_labels.py            # 用RV_30D与ATM_IV_30D构造分类标签与ε阈值
+  ├─ execution/
+  │   └─ selection.py               # 近30D平值跨式/宽跨式选券
+  ├─ backtest/
+  │   ├─ engine.py                  # 回测引擎（T+1成交、持有期/到期前N天平仓）
+  │   ├─ metrics.py                 # 绩效指标计算
+  │   └─ run_backtest.py            # 载入参数、运行回测、输出净值与指标
+  ├─ report/
+  ├─ config/
+  │   └─ params.yaml                # 路径、利率、过滤、IV反推、回测参数
+  └─ README.md
+```
+
 ## 数据需求 (Data Requirements)
 
 * **标的物行情:** **目标标的物**的日线K线数据 (例如：沪深300指数, 上证50ETF, 特定股票等)。
@@ -205,6 +231,28 @@ notebook的大致流程将会是：load data, train model, predict, backtest, an
   - 多波动率：买入最接近 30D 的平值跨式（现货ATM近似），可选日终 delta 对冲；
   - 空波动率：因无保证金数据，先不纳入MVP主线，或仅以有限风险的价差结构做小规模实验。
 - 评估：以策略净值与夏普/最大回撤/尾损分位为核心；记录建仓的 DTE、ATM 偏差与IV 估计稳定性以做健壮性检验。
+
+### 运行步骤（示例）
+
+1. 生成期权衍生表（IV/Greeks）：
+   - 运行：`python Volatility_Prediction_Strategy/features/build_derived_tables.py`
+   - 输出：`data/derived/options_derived.csv`
+2. 生成因子：
+   - 运行：`python Volatility_Prediction_Strategy/features/build_factors.py`
+   - 输出：`data/derived/factors.csv`
+3. 生成标签：
+   - 运行：`python Volatility_Prediction_Strategy/features/build_labels.py`
+   - 输出：`data/derived/labels.csv`
+4. 回测：
+   - 运行：`python Volatility_Prediction_Strategy/backtest/run_backtest.py`
+   - 输出：`data/derived/equity.csv` 与控制台打印的指标。
+
+### 并行与性能
+
+- 可通过环境变量或脚本常量设置并行度：
+  - 环境变量：`VP_NUM_WORKERS=8`（线程数，Windows 上推荐线程并行；计算密集场景可换为进程并行在后续版本中开启）。
+  - 位置：`features/build_derived_tables.py`、`features/build_factors.py` 均支持 `NUM_WORKERS` 设置；`build_labels.py` 暂不需要并行。
+- Windows 下建议使用线程池并行（已默认），避免进程开销。
 
 ## 未来工作 (Future Work)
 
