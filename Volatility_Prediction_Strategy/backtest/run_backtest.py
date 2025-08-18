@@ -20,6 +20,8 @@ def main():
 
 	options_derived_csv = os.path.join(paths["output_dir"], "options_derived.csv")
 	labels_csv = os.path.join(paths["output_dir"], "labels.csv")
+	result_dir = paths.get("result_dir", os.path.join(paths["data_dir"], "result"))
+	os.makedirs(result_dir, exist_ok=True)
 
 	bt = LongStraddleBacktester(
 		options_derived_csv=options_derived_csv,

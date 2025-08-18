@@ -1,6 +1,7 @@
 paths:
   data_dir: Volatility_Prediction_Strategy/data
   output_dir: Volatility_Prediction_Strategy/data/derived
+  result_dir: Volatility_Prediction_Strategy/data/result
   underlying_csv: Volatility_Prediction_Strategy/data/CSI300.csv
   options_glob: Volatility_Prediction_Strategy/data/option_CSI300_*.csv
   rates_csv: Volatility_Prediction_Strategy/data/interbank_offered_rate.csv
