@@ -50,3 +50,19 @@ labels:
 backtest:
   holding_period_days: 10
   pre_expiry_buffer_days: 3
+  signal_source: ml  # labels | ml
+
+results:
+  write_equity: true
+  write_trades: true
+  write_daily_ledger: false
+  write_overview_html: true
+
+visualization:
+  row_height: 500  # pixels per subplot row
+
+ml:
+  use_ml: true
+  model: xgboost
+  threshold: 0.5
+  min_train_days: 252
