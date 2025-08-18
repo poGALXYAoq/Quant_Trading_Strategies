@@ -8,7 +8,9 @@ NUM_WORKERS = int(os.getenv("VP_NUM_WORKERS", "30"))
 
 def realized_vol(close: pd.Series, window: int, annualization_days: int = 252) -> pd.Series:
 	ret = np.log(close).diff()
-	return ret.rolling(window).std() * np.sqrt(annualization_days)
+	# 前瞻窗口：用未来 [t+1, t+window] 的收益，先向前移位，再 rolling，然后再对齐到 t
+	rv = ret.shift(-1).rolling(window).std() * np.sqrt(annualization_days)
+	return rv.shift(-(window - 1))
 
 
 def build_labels(underlying_csv: str, factors_csv: str, output_csv: str,
