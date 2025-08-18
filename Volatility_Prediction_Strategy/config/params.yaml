@@ -33,6 +33,13 @@ execution:
   slippage_per_leg: 0.5
   fee_per_lot: 1.0
   avoid_open_new_when_dte_leq: 3
+  position_sizing:
+    mode: notional_fraction  # fixed_qty | notional_fraction | target_vega
+    fixed_qty: 1
+    notional_fraction: 0.1
+    target_vega: 2000.0
+    contract_multiplier: 1.0
+  initial_cash: 1000000.0
 
 labels:
   epsilon_quantile: 0.6
