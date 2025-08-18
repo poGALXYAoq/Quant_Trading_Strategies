@@ -11,17 +11,38 @@ except ImportError:
 	from backtest.engine import LongStraddleBacktester
 	from backtest.metrics import compute_metrics
 
+# optional ML label generator
+try:
+	from ..models.ml_signals import generate_ml_labels
+except Exception:
+	try:
+		from models.ml_signals import generate_ml_labels
+	except Exception:
+		generate_ml_labels = None
+
 
 def main():
 	cfg = yaml.safe_load(open("Volatility_Prediction_Strategy/config/params.yaml", "r", encoding="utf-8"))
 	paths = cfg["paths"]
 	bt_cfg = cfg["backtest"]
 	exec_cfg = cfg["execution"]
+	res_cfg = cfg.get("results", {})
+	viz_cfg = cfg.get("visualization", {})
+	ml_cfg = cfg.get("ml", {})
 
 	options_derived_csv = os.path.join(paths["output_dir"], "options_derived.csv")
 	labels_csv = os.path.join(paths["output_dir"], "labels.csv")
 	result_dir = paths.get("result_dir", os.path.join(paths["data_dir"], "result"))
 	os.makedirs(result_dir, exist_ok=True)
+
+	# pick signal source
+	use_ml = (bt_cfg.get("signal_source", "labels").lower() == "ml") or bool(ml_cfg.get("use_ml", False))
+	if use_ml:
+		if generate_ml_labels is None:
+			print("ML label generator not available; falling back to labels.csv")
+		else:
+			labels_csv = generate_ml_labels("Volatility_Prediction_Strategy/config/params.yaml")
+			print(f"using ML labels: {labels_csv}")
 
 	bt = LongStraddleBacktester(
 		options_derived_csv=options_derived_csv,
