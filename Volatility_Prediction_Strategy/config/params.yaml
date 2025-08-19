@@ -66,3 +66,10 @@ ml:
   model: xgboost
   threshold: 0.5
   min_train_days: 252
+  training_mode: split  # walk_forward | split
+  split:
+    train: ["2020-01-01", "2022-12-31"]
+    val: ["2023-01-01", "2023-12-31"]
+    test: ["2024-01-01", "2024-12-31"]
+  threshold_selection: f1
+  threshold_grid: [0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60]
