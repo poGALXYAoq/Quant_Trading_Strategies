@@ -221,3 +221,5 @@ TA_option_data.ipynb
 /.idea/
 
 identifier.sqlite
+
+/GBDT_futures/results/
