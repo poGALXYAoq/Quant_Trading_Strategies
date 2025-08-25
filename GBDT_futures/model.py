@@ -22,15 +22,15 @@ USER_CONFIG: Dict[str, object] = {
     "price_col": PRICE_COL_DEFAULT,
     # 设备与调参
     "use_gpu": True,
-    "tune": True,
+    "tune": False,
     "n_trials": 80,
     # 模型与训练控制（不改数据，仅从模型侧优化）
-    "booster": "dart",               # 可先用 gbtree；若仍过拟合可试 "dart"
+    "booster": "gbtree",               # 可先用 gbtree；若仍过拟合可试 "dart"
     "objective": "reg:absoluteerror",  # 稳健损失，降低极端值影响
     "n_estimators": 1500,               # 限制上限，让早停更容易触发
     "early_stopping_rounds": 50,        # 更积极的早停
     # 训练期内的时间序列交叉验证
-    "cv_folds": 3,                      # 以 2019/2020/2021 为滚动验证
+    "cv_folds": 0,                      # 以 2019/2020/2021 为滚动验证
     # 时间衰减样本权重（提升近期适配性）
     "use_time_decay": True,
     "half_life_days": 126,
