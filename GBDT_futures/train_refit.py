@@ -67,14 +67,55 @@ def directional_accuracy(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     return float(np.mean(s_true == s_pred))
 
 
-def evaluate(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
+def _directional_trade_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float | None]:
+    y_true = np.asarray(y_true, dtype=float)
+    y_pred = np.asarray(y_pred, dtype=float)
+    mask = np.isfinite(y_true) & np.isfinite(y_pred)
+    y_true = y_true[mask]
+    y_pred = y_pred[mask]
+    if y_true.size == 0:
+        return {
+            "volatility_correct": 0.0,
+            "volatility_incorrect": 0.0,
+            "theoretical_profit": 0.0,
+            "profit_loss_ratio": None,
+            "long_signal_ratio": 0.0,
+            "short_signal_ratio": 0.0,
+        }
+    s_true = np.sign(y_true)
+    s_pred = np.sign(y_pred)
+    correct_mask = s_true == s_pred
+    incorrect_mask = ~correct_mask
+    vol_correct = float(np.sum(np.abs(y_true[correct_mask])))
+    vol_incorrect = float(np.sum(np.abs(y_true[incorrect_mask])))
+    theoretical_profit = float(vol_correct - vol_incorrect)
+    if vol_incorrect == 0.0:
+        pl_ratio = None
+    else:
+        pl_ratio = float(vol_correct / vol_incorrect)
+    long_ratio = float(np.mean(y_pred > 0))
+    short_ratio = float(np.mean(y_pred < 0))
+    return {
+        "volatility_correct": vol_correct,
+        "volatility_incorrect": vol_incorrect,
+        "theoretical_profit": theoretical_profit,
+        "profit_loss_ratio": pl_ratio,
+        "long_signal_ratio": long_ratio,
+        "short_signal_ratio": short_ratio,
+    }
+
+
+def evaluate(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float | None]:
     from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
     rmse = float(np.sqrt(mean_squared_error(y_true, y_pred)))
     mae = float(mean_absolute_error(y_true, y_pred))
     r2 = float(r2_score(y_true, y_pred))
     da = directional_accuracy(y_true, y_pred)
-    return {"rmse": rmse, "mae": mae, "r2": r2, "directional_accuracy": da}
+    extra = _directional_trade_metrics(y_true, y_pred)
+    out: Dict[str, float | None] = {"rmse": rmse, "mae": mae, "r2": r2, "directional_accuracy": da}
+    out.update(extra)
+    return out
 
 
 def make_default_xgb_params(use_gpu: bool = False) -> Dict[str, object]:
