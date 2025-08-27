@@ -105,7 +105,8 @@ def run_predict(data_path: str, deploy_root: str | None, days: int, start_date: 
         eff_start = str(df_sel[DATE_COL].iloc[0].date())
         eff_end = str(df_sel[DATE_COL].iloc[-1].date())
     else:
-        df_sel = _slice_by_date(df, start_date, end_date).reset_index(drop=True)
+        df_slice = _slice_by_date(df, start_date, end_date)
+        df_sel = df_slice.reset_index(drop=True)
         if len(df_sel) == 0:
             print(json.dumps({
                 "error": "所选日期范围内无可用交易日",
@@ -113,7 +114,10 @@ def run_predict(data_path: str, deploy_root: str | None, days: int, start_date: 
                 "end_date": end_date
             }, ensure_ascii=False, indent=2))
             return
-        X_sel = X.loc[df_sel.index]
+        # 与切片后行对齐，防止索引错配
+        X_sel = X.loc[df_slice.index].reset_index(drop=True)
+        # 定义 n 以便下方循环
+        n = len(df_sel)
         eff_start = str(df_sel[DATE_COL].iloc[0].date())
         eff_end = str(df_sel[DATE_COL].iloc[-1].date())
 
