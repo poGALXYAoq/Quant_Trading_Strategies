@@ -17,7 +17,7 @@ PRICE_COL_DEFAULT = "加权平均价(主力合约):沪铜(9:00-15:00)"
 
 # ===== 可在此处直接修改默认运行配置（无需命令行） =====
 USER_CONFIG: Dict[str, object] = {
-    "data_path": os.path.join(os.path.dirname(__file__), "data", "沪铜_20170101_20250731.csv"),
+    "data_path": os.path.join(os.path.dirname(__file__), "data", "以收盘价为label.csv"),
     "output_dir": os.path.dirname(__file__),
     "price_col": PRICE_COL_DEFAULT,
     # 设备与调参
@@ -101,9 +101,9 @@ class DateRange:
 
 
 SPLITS: Dict[str, DateRange] = {
-    "train": DateRange("2017-01-01", "2021-12-31"),
-    "valid": DateRange("2022-01-01", "2023-12-31"),
-    "test": DateRange("2024-01-01", "2025-07-31"),
+    "train": DateRange("2017-01-01", "2022-06-30"),
+    "valid": DateRange("2022-07-01", "2024-05-30"),
+    "test": DateRange("2024-06-01", "2025-08-25"),
 }
 
 

@@ -12,14 +12,14 @@ PRICE_COL = "加权平均价(主力合约):沪铜(9:00-15:00)"
 
 # ===== 可在此处直接修改默认运行配置（无需命令行） =====
 USER_CONFIG: Dict[str, object] = {
-    "data_path": os.path.join(os.path.dirname(__file__), "data", "沪铜01.csv"),
+    "data_path": os.path.join(os.path.dirname(__file__), "data", "以收盘价为label.csv"),
     # 指向 train_refit.py 生成的部署目录根。若为空，将自动从 results_deploy 下选择最新 cut_ 目录。
     "deploy_root": "",
     # 方式A：最近 N 天（保留兼容）
     "days": 0,  # 设为 >0 启用此模式；否则使用日期范围
     # 方式B：按日期范围选择（包含端点）。若输入非交易日，将自动向内收敛到最近可用日期。
-    "start_date": "2025-08-20",
-    "end_date": "2025-08-25",
+    "start_date": "2025-08-01",
+    "end_date": "2025-08-26",
 }
 
 # 是否启用命令行参数。False 表示忽略命令行，仅使用上面的 USER_CONFIG
