@@ -80,8 +80,16 @@ def run_predict(data_path: str, deploy_root: str | None, days: int, start_date: 
     df[DATE_COL] = pd.to_datetime(df[DATE_COL])
     df = df.sort_values(DATE_COL).reset_index(drop=True)
 
-    X = df[feature_cols].copy()
-    X = X.fillna(medians.reindex(feature_cols))
+    # 推理端特征对齐：若缺列则用中位数填充并创建；多余列将被丢弃
+    have = set(df.columns)
+    need = list(feature_cols)
+    missing = [c for c in need if c not in have]
+    if missing:
+        for c in missing:
+            fill_val = medians.get(c, 0.0)
+            df[c] = fill_val
+    X = df[need].copy()
+    X = X.fillna(medians.reindex(need))
 
     model = XGBRegressor()
     model.load_model(os.path.join(models, "xgb_model_final.json"))
