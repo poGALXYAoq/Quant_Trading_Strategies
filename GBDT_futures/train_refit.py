@@ -15,12 +15,14 @@ PRICE_COL_DEFAULT = "加权平均价(主力合约):沪铜(9:00-15:00)"
 
 # ===== 可在此处直接修改默认运行配置（无需命令行） =====
 USER_CONFIG: Dict[str, object] = {
-    "data_path": os.path.join(os.path.dirname(__file__), "data", "沪铜_20170101_20250731.csv"),
+    "data_path": os.path.join(os.path.dirname(__file__), "data", "以收盘价为label.csv"),
     "output_dir": os.path.dirname(__file__),
     "price_col": PRICE_COL_DEFAULT,
+    # 起始使用数据的最早日期（含）。为空表示不限制，从最早可用数据开始。
+    "start_date": "2017-02-01",
     # 训练贴近 cut_date（当日为验证窗右端），并用于明日预测
-    "cut_date": "2025-07-31",
-    "valid_days": 90,
+    "cut_date": "2025-08-25",
+    "valid_days": 60,
     "embargo_days": 1,
     # 训练细节
     "use_time_decay": True,
@@ -273,6 +275,7 @@ def run_refit(
     data_path: str,
     output_dir: str,
     price_col: str,
+    start_date: str,
     cut_date: str,
     valid_days: int,
     embargo_days: int,
@@ -283,6 +286,10 @@ def run_refit(
     params_json: str = "",
 ) -> None:
     df_raw = load_data(data_path)
+    # 可选：按 start_date 过滤数据
+    if start_date:
+        sd = pd.to_datetime(start_date)
+        df_raw = df_raw[df_raw[DATE_COL] >= sd].reset_index(drop=True)
     df = build_label(df_raw, price_col)
 
     m_tr, m_va = build_dynamic_masks(df[DATE_COL], cut_date, valid_days, embargo_days=embargo_days)
@@ -394,6 +401,7 @@ if __name__ == "__main__":
         parser.add_argument("--data_path", type=str, required=True)
         parser.add_argument("--output_dir", type=str, default=os.path.dirname(__file__))
         parser.add_argument("--price_col", type=str, default=PRICE_COL_DEFAULT)
+        parser.add_argument("--start_date", type=str, default="", help="起始使用数据的最早日期 YYYY-MM-DD（含），为空表示不限制")
         parser.add_argument("--params_json", type=str, default="")
         parser.add_argument("--cut_date", type=str, required=True)
         parser.add_argument("--valid_days", type=int, default=63)
@@ -407,6 +415,7 @@ if __name__ == "__main__":
             data_path=cli.data_path,
             output_dir=cli.output_dir,
             price_col=cli.price_col,
+            start_date=str(cli.start_date),
             cut_date=cli.cut_date,
             valid_days=int(cli.valid_days),
             embargo_days=int(cli.embargo_days),
@@ -422,6 +431,7 @@ if __name__ == "__main__":
             data_path=str(cfg["data_path"]),
             output_dir=str(cfg["output_dir"]),
             price_col=str(cfg.get("price_col", PRICE_COL_DEFAULT)),
+            start_date=str(cfg.get("start_date", "")),
             cut_date=str(cfg["cut_date"]),
             valid_days=int(cfg.get("valid_days", 63)),
             embargo_days=int(cfg.get("embargo_days", 1)),
