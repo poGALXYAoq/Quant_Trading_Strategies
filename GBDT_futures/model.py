@@ -12,18 +12,18 @@ from xgboost import XGBRegressor
 
 
 DATE_COL = "date"
-PRICE_COL_DEFAULT = "加权平均价(主力合约):沪铜(9:00-15:00)"
+PRICE_COL_DEFAULT = "期货收盘价(活跃合约):精对苯二甲酸(PTA)"
 
 
 # ===== 可在此处直接修改默认运行配置（无需命令行） =====
 USER_CONFIG: Dict[str, object] = {
-    "data_path": os.path.join(os.path.dirname(__file__), "data", "以收盘价为label.csv"),
+    "data_path": os.path.join(os.path.dirname(__file__), "data", "PTA/PTA收盘价label.csv"),
     "output_dir": os.path.dirname(__file__),
     "price_col": PRICE_COL_DEFAULT,
     # 设备与调参
     "use_gpu": True,
     "tune": False,
-    "n_trials": 80,
+    "n_trials": 200,
     # 模型与训练控制（不改数据，仅从模型侧优化）
     "booster": "gbtree",               # 可先用 gbtree；若仍过拟合可试 "dart"
     "objective": "reg:absoluteerror",  # 稳健损失，降低极端值影响

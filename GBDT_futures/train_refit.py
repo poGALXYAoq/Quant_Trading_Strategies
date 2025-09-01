@@ -10,22 +10,22 @@ from xgboost import XGBRegressor
 
 
 DATE_COL = "date"
-PRICE_COL_DEFAULT = "加权平均价(主力合约):沪铜(9:00-15:00)"
+PRICE_COL_DEFAULT = "期货收盘价(活跃合约):精对苯二甲酸(PTA)"
 
 
 # ===== 可在此处直接修改默认运行配置（无需命令行） =====
 USER_CONFIG: Dict[str, object] = {
-    "data_path": os.path.join(os.path.dirname(__file__), "data", "以收盘价为label.csv"),
+    "data_path": os.path.join(os.path.dirname(__file__), "data", "PTA/PTA收盘价label.csv"),
     "output_dir": os.path.dirname(__file__),
     "price_col": PRICE_COL_DEFAULT,
     # 起始使用数据的最早日期（含）。为空表示不限制，从最早可用数据开始。
-    "start_date": "2017-02-01",
+    "start_date": "2018-01-01",
     # 训练贴近 cut_date（当日为验证窗右端），并用于明日预测
     "cut_date": "2025-08-25",
-    "valid_days": 60,
+    "valid_days": 90,
     "embargo_days": 1,
     # 训练细节
-    "use_time_decay": True,
+    "use_time_decay": False,
     "half_life_days": 126.0,
     "use_gpu": True,
     "early_stopping_rounds": 50,
