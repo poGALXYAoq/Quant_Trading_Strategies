@@ -48,7 +48,7 @@ class DateRange:
 
 
 SPLITS: Dict[str, DateRange] = {
-    "train": DateRange("2017-01-01", "2022-06-30"),
+    "train": DateRange("2018-01-01", "2022-06-30"),
     "valid": DateRange("2022-07-01", "2024-05-30"),
     "test": DateRange("2024-06-01", "2025-08-25"),
 }
