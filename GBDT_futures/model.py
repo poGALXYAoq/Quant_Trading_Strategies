@@ -36,59 +36,6 @@ USER_CONFIG: Dict[str, object] = {
     "half_life_days": 126,
 }
 
-# 是否启用命令行参数覆盖。False 表示忽略命令行，仅使用上面的 USER_CONFIG
-USE_CLI_ARGS = False
-
-
-def parse_args(defaults: Dict[str, object]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="基于 XGBoost 的沪铜主力下一日收盘价差预测（固定日期切分）"
-    )
-    parser.add_argument(
-        "--data_path",
-        type=str,
-        default=str(defaults.get("data_path")),
-        help="CSV 路径",
-    )
-    parser.add_argument(
-        "--output_dir",
-        type=str,
-        default=str(defaults.get("output_dir")),
-        help="输出根目录（将创建 models / predictions / artifacts 子目录）",
-    )
-    parser.add_argument(
-        "--price_col",
-        type=str,
-        default=str(defaults.get("price_col", PRICE_COL_DEFAULT)),
-        help="用于构造标签的价格列",
-    )
-    parser.add_argument(
-        "--use_gpu",
-        action="store_true" if not bool(defaults.get("use_gpu", False)) else "store_false",
-        help=(
-            "若默认未启用 GPU，则使用 --use_gpu 开启；"
-            "若默认已开启 GPU，则使用 --use_gpu 关闭（切换行为）。"
-        ),
-    )
-    parser.add_argument(
-        "--tune",
-        action="store_true" if not bool(defaults.get("tune", False)) else "store_false",
-        help=(
-            "若默认未开启调参，则使用 --tune 开启；"
-            "若默认已开启调参，则使用 --tune 关闭（切换行为）。"
-        ),
-    )
-    parser.add_argument(
-        "--n_trials",
-        type=int,
-        default=int(defaults.get("n_trials", 30)),
-        help="Optuna 调参试验次数",
-    )
-    args = parser.parse_args()
-    # 处理切换型开关（根据默认值进行取反）
-    args.use_gpu = bool(defaults.get("use_gpu", False)) ^ bool(args.use_gpu)
-    args.tune = bool(defaults.get("tune", False)) ^ bool(args.tune)
-    return args
 
 
 @dataclass
@@ -659,25 +606,14 @@ def run(
 
 
 if __name__ == "__main__":
-    if USE_CLI_ARGS:
-        args = parse_args(USER_CONFIG)
-        run(
-            data_path=args.data_path,
-            output_dir=args.output_dir,
-            price_col=args.price_col,
-            use_gpu=args.use_gpu,
-            tune=args.tune,
-            n_trials=args.n_trials,
-        )
-    else:
-        cfg = USER_CONFIG
-        run(
-            data_path=str(cfg["data_path"]),
-            output_dir=str(cfg["output_dir"]),
-            price_col=str(cfg["price_col"]),
-            use_gpu=bool(cfg.get("use_gpu", False)),
-            tune=bool(cfg.get("tune", False)),
-            n_trials=int(cfg.get("n_trials", 30)),
-        )
+    cfg = USER_CONFIG
+    run(
+        data_path=str(cfg["data_path"]),
+        output_dir=str(cfg["output_dir"]),
+        price_col=str(cfg["price_col"]),
+        use_gpu=bool(cfg.get("use_gpu", False)),
+        tune=bool(cfg.get("tune", False)),
+        n_trials=int(cfg.get("n_trials", 30)),
+       )
 
 

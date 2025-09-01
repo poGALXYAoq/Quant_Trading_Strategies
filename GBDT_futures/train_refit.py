@@ -33,9 +33,6 @@ USER_CONFIG: Dict[str, object] = {
     "params_json": "",
 }
 
-# 是否启用命令行参数。False 表示忽略命令行，仅使用上面的 USER_CONFIG
-USE_CLI_ARGS = False
-
 
 def load_data(csv_path: str) -> pd.DataFrame:
     df = pd.read_csv(csv_path, encoding="utf-8-sig")
@@ -396,50 +393,20 @@ def run_refit(
 
 
 if __name__ == "__main__":
-    if USE_CLI_ARGS:
-        parser = argparse.ArgumentParser("Train near cut_date and save deployable model")
-        parser.add_argument("--data_path", type=str, required=True)
-        parser.add_argument("--output_dir", type=str, default=os.path.dirname(__file__))
-        parser.add_argument("--price_col", type=str, default=PRICE_COL_DEFAULT)
-        parser.add_argument("--start_date", type=str, default="", help="起始使用数据的最早日期 YYYY-MM-DD（含），为空表示不限制")
-        parser.add_argument("--params_json", type=str, default="")
-        parser.add_argument("--cut_date", type=str, required=True)
-        parser.add_argument("--valid_days", type=int, default=63)
-        parser.add_argument("--embargo_days", type=int, default=1)
-        parser.add_argument("--use_time_decay", type=int, default=1)
-        parser.add_argument("--half_life_days", type=float, default=126)
-        parser.add_argument("--use_gpu", action="store_true")
-        parser.add_argument("--early_stopping_rounds", type=int, default=50)
-        cli = parser.parse_args()
-        run_refit(
-            data_path=cli.data_path,
-            output_dir=cli.output_dir,
-            price_col=cli.price_col,
-            start_date=str(cli.start_date),
-            cut_date=cli.cut_date,
-            valid_days=int(cli.valid_days),
-            embargo_days=int(cli.embargo_days),
-            use_time_decay=bool(cli.use_time_decay),
-            half_life_days=float(cli.half_life_days),
-            use_gpu=bool(cli.use_gpu),
-            early_stopping_rounds=int(cli.early_stopping_rounds),
-            params_json=str(cli.params_json),
-        )
-    else:
-        cfg = USER_CONFIG
-        run_refit(
-            data_path=str(cfg["data_path"]),
-            output_dir=str(cfg["output_dir"]),
-            price_col=str(cfg.get("price_col", PRICE_COL_DEFAULT)),
-            start_date=str(cfg.get("start_date", "")),
-            cut_date=str(cfg["cut_date"]),
-            valid_days=int(cfg.get("valid_days", 63)),
-            embargo_days=int(cfg.get("embargo_days", 1)),
-            use_time_decay=bool(cfg.get("use_time_decay", True)),
-            half_life_days=float(cfg.get("half_life_days", 126.0)),
-            use_gpu=bool(cfg.get("use_gpu", False)),
-            early_stopping_rounds=int(cfg.get("early_stopping_rounds", 50)),
-            params_json=str(cfg.get("params_json", "")),
-        )
+    cfg = USER_CONFIG
+    run_refit(
+        data_path=str(cfg["data_path"]),
+        output_dir=str(cfg["output_dir"]),
+        price_col=str(cfg.get("price_col", PRICE_COL_DEFAULT)),
+        start_date=str(cfg.get("start_date", "")),
+        cut_date=str(cfg["cut_date"]),
+        valid_days=int(cfg.get("valid_days", 63)),
+        embargo_days=int(cfg.get("embargo_days", 1)),
+        use_time_decay=bool(cfg.get("use_time_decay", True)),
+        half_life_days=float(cfg.get("half_life_days", 126.0)),
+        use_gpu=bool(cfg.get("use_gpu", False)),
+        early_stopping_rounds=int(cfg.get("early_stopping_rounds", 50)),
+        params_json=str(cfg.get("params_json", "")),
+    )
 
 

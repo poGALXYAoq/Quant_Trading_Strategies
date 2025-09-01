@@ -148,23 +148,13 @@ def run_predict(data_path: str, deploy_root: str | None, days: int, start_date: 
 
 
 if __name__ == "__main__":
-    if USE_CLI_ARGS:
-        parser = argparse.ArgumentParser("Predict next-day delta for a chosen date range or last N days")
-        parser.add_argument("--data_path", type=str, required=True)
-        parser.add_argument("--deploy_root", type=str, default="", help="train_refit.py 输出目录（results_deploy/cut_*）")
-        parser.add_argument("--days", type=int, default=0, help="最近 N 天。若为 0 则使用 --start_date/--end_date")
-        parser.add_argument("--start_date", type=str, default="", help="起始日期 YYYY-MM-DD（可非交易日，自动收敛）")
-        parser.add_argument("--end_date", type=str, default="", help="结束日期 YYYY-MM-DD（可非交易日，自动收敛）")
-        args = parser.parse_args()
-        run_predict(args.data_path, args.deploy_root or None, int(args.days), args.start_date, args.end_date)
-    else:
-        cfg = USER_CONFIG
-        run_predict(
-            str(cfg["data_path"]),
-            (str(cfg.get("deploy_root")) or None),
-            int(cfg.get("days", 0)),
-            str(cfg.get("start_date", "")),
-            str(cfg.get("end_date", "")),
-        )
+    cfg = USER_CONFIG
+    run_predict(
+        str(cfg["data_path"]),
+        (str(cfg.get("deploy_root")) or None),
+        int(cfg.get("days", 0)),
+        str(cfg.get("start_date", "")),
+        str(cfg.get("end_date", "")),
+    )
 
 
