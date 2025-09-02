@@ -7,19 +7,19 @@ import pandas as pd
 from xgboost import XGBRegressor
 
 DATE_COL = "date"
-PRICE_COL = "期货收盘价(活跃合约):精对苯二甲酸(PTA)"
+PRICE_COL = "期货收盘价(活跃合约):阴极铜"
 
 
 # ===== 可在此处直接修改默认运行配置（无需命令行） =====
 USER_CONFIG: Dict[str, object] = {
-    "data_path": os.path.join(os.path.dirname(__file__), "data", "PTA/PTA收盘价label.csv"),
+    "data_path": os.path.join(os.path.dirname(__file__), "data", "CU/predict.csv"),
     # 指向 train_refit.py 生成的部署目录根。若为空，将自动从 results_deploy 下选择最新 cut_ 目录。
     "deploy_root": "",
     # 方式A：最近 N 天（保留兼容）
     "days": 0,  # 设为 >0 启用此模式；否则使用日期范围
     # 方式B：按日期范围选择（包含端点）。若输入非交易日，将自动向内收敛到最近可用日期。
-    "start_date": "2025-08-01",
-    "end_date": "2025-08-29",
+    "start_date": "2025-08-15",
+    "end_date": "2025-09-01",
 }
 
 

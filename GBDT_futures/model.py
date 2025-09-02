@@ -12,12 +12,12 @@ from xgboost import XGBRegressor
 
 
 DATE_COL = "date"
-PRICE_COL_DEFAULT = "期货收盘价(活跃合约):精对苯二甲酸(PTA)"
+PRICE_COL_DEFAULT = "期货收盘价(活跃合约):阴极铜"
 
 
 # ===== 可在此处直接修改默认运行配置（无需命令行） =====
 USER_CONFIG: Dict[str, object] = {
-    "data_path": os.path.join(os.path.dirname(__file__), "data", "PTA/PTA收盘价label.csv"),
+    "data_path": os.path.join(os.path.dirname(__file__), "data", "CU\以收盘价为label.csv"),
     "output_dir": os.path.dirname(__file__),
     "price_col": PRICE_COL_DEFAULT,
     # 设备与调参
