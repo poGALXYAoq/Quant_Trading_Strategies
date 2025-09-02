@@ -32,8 +32,12 @@ USER_CONFIG: Dict[str, object] = {
     # 训练期内的时间序列交叉验证
     "cv_folds": 0,                      # 以 2019/2020/2021 为滚动验证
     # 时间衰减样本权重（提升近期适配性）
-    "use_time_decay": True,
+    "use_time_decay": False,
     "half_life_days": 126,
+    # 调参与信号校准
+    "tune_target": "da",          # 可选: "rmse" | "da" | "profit"
+    "calibrate_sign": False,        # 关闭：不做阈值过滤，仅用于分析可选输出
+    "neutral_band_q": 0.0,          # 设为0表示无“无交易带”
 }
 
 
@@ -148,6 +152,39 @@ def evaluate(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float | None]:
     return out
 
 
+def _sign_with_threshold(y_score: np.ndarray, tau: float = 0.0, band: float = 0.0) -> np.ndarray:
+    z = np.asarray(y_score, dtype=float) - float(tau)
+    s = np.zeros_like(z, dtype=float)
+    if float(band) > 0.0:
+        s[z > band] = 1.0
+        s[z < -band] = -1.0
+    else:
+        s[z > 0] = 1.0
+        s[z < 0] = -1.0
+    return s
+
+
+def calibrate_threshold_from_predictions(y_score: np.ndarray, neutral_band_q: float = 0.2) -> Tuple[float, float]:
+    y_score = np.asarray(y_score, dtype=float)
+    tau = float(np.median(y_score))
+    if 0.0 < float(neutral_band_q) < 1.0:
+        band = float(np.quantile(np.abs(y_score - tau), float(neutral_band_q)))
+    else:
+        band = 0.0
+    return tau, band
+
+
+def evaluate_directional_only(y_true: np.ndarray, y_score: np.ndarray, tau: float = 0.0, band: float = 0.0) -> Dict[str, float | None]:
+    y_true = np.asarray(y_true, dtype=float)
+    s_pred = _sign_with_threshold(np.asarray(y_score, dtype=float), tau, band)
+    s_true = np.sign(y_true)
+    da = float(np.mean(s_true == s_pred))
+    extra = _directional_trade_metrics(y_true, s_pred)
+    out: Dict[str, float | None] = {"directional_accuracy": da}
+    out.update(extra)
+    return out
+
+
 def make_default_xgb_params(use_gpu: bool = False) -> Dict[str, object]:
     # 更强正则 + 更浅的树，降低过拟合风险
     params: Dict[str, object] = dict(
@@ -160,6 +197,7 @@ def make_default_xgb_params(use_gpu: bool = False) -> Dict[str, object]:
         gamma=1.0,
         reg_alpha=0.1,
         reg_lambda=2.0,
+        base_score=0.0,
         objective=str(USER_CONFIG.get("objective", "reg:squarederror")),
         booster=str(USER_CONFIG.get("booster", "gbtree")),
         n_jobs=-1,
