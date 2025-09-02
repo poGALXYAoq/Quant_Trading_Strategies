@@ -260,32 +260,28 @@ def infer_best_n_estimators(model: XGBRegressor) -> int:
             return int(booster.best_ntree_limit)
     except Exception:
         pass
-    # 3) 从 evals_result 里解析（validation_0 的 rmse 最小点）
+    # 3) 从 evals_result 里解析（兼容 evals_result 或 evals_result_；validation_0 的 rmse/mae 最小点）
     try:
-        er = model.evals_result()
+        er_m = getattr(model, "evals_result", None)
+        er = er_m() if callable(er_m) else getattr(model, "evals_result_", None)
         # 常见 key：'validation_0' 或 'eval'
-        keys = list(er.keys())
-        for key in ["validation_0", "eval", "valid"]:
-            if key in er:
-                metrics = er[key]
-                # 优先 rmse
-                if "rmse" in metrics:
-                    values = metrics["rmse"]
-                else:
-                    # 任取第一个度量
-                    mname = list(metrics.keys())[0]
-                    values = metrics[mname]
-                if isinstance(values, list) and len(values) > 0:
-                    best_idx = int(np.argmin(values))
-                    return best_idx + 1
-        # 若没有标准 key，尝试第一个 eval 集
-        if keys:
-            first_key = keys[0]
-            metrics = er[first_key]
-            mname = list(metrics.keys())[0]
-            values = metrics[mname]
-            best_idx = int(np.argmin(values))
-            return best_idx + 1
+        if er:
+            keys = list(er.keys())
+            for key in ["validation_0", "eval", "valid"]:
+                if key in er:
+                    metrics = er[key]
+                    metric_name = "rmse" if "rmse" in metrics else ("mae" if "mae" in metrics else list(metrics.keys())[0])
+                    values = metrics[metric_name]
+                    if isinstance(values, list) and len(values) > 0:
+                        best_idx = int(np.argmin(values))
+                        return best_idx + 1
+            if keys:
+                first_key = keys[0]
+                metrics = er[first_key]
+                metric_name = list(metrics.keys())[0]
+                values = metrics[metric_name]
+                best_idx = int(np.argmin(values))
+                return best_idx + 1
     except Exception:
         pass
     # 4) 回退：使用设定的 n_estimators
@@ -294,32 +290,26 @@ def infer_best_n_estimators(model: XGBRegressor) -> int:
 
 def extract_best_validation_metric(model: XGBRegressor) -> tuple[str, float] | None:
     try:
-        er = model.evals_result()
-        # 常见 key：'validation_0' / 'eval' / 'valid'
+        er_m = getattr(model, "evals_result", None)
+        er = er_m() if callable(er_m) else getattr(model, "evals_result_", None)
+        if not er:
+            return None
         for key in ["validation_0", "eval", "valid"]:
             if key in er:
                 metrics = er[key]
-                # 优先 rmse / mae
                 if "rmse" in metrics:
-                    values = metrics["rmse"]
-                    return ("rmse", float(np.min(values)))
+                    values = metrics["rmse"];  return ("rmse", float(np.min(values)))
                 if "mae" in metrics:
-                    values = metrics["mae"]
-                    return ("mae", float(np.min(values)))
-                # 任取第一个度量
+                    values = metrics["mae"];   return ("mae", float(np.min(values)))
                 mname = list(metrics.keys())[0]
-                values = metrics[mname]
-                return (mname, float(np.min(values)))
-        # 回退：第一个 eval 集第一个度量
-        if er:
-            first_key = list(er.keys())[0]
-            metrics = er[first_key]
-            mname = list(metrics.keys())[0]
-            values = metrics[mname]
-            return (mname, float(np.min(values)))
+                values = metrics[mname];       return (mname, float(np.min(values)))
+        first_key = list(er.keys())[0]
+        metrics = er[first_key]
+        mname = list(metrics.keys())[0]
+        values = metrics[mname]
+        return (mname, float(np.min(values)))
     except Exception:
         return None
-    return None
 
 
 def refit_final_model(
@@ -557,7 +547,6 @@ def run(
     pred_test = model_final.predict(X_test_imp)
 
     # 8) 评估
-    best_n = infer_best_n_estimators(model_es)
     # 附加早停与验证最优度量信息，便于确认是否触发
     best_n = infer_best_n_estimators(model_es)
     best_metric = extract_best_validation_metric(model_es)
