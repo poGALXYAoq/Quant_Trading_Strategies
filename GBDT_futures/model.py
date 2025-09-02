@@ -625,6 +625,18 @@ def run(
         "used_params": params,
     }
 
+    # 8.1) 若开启信号校准，则附加输出校准后的方向/盈亏指标
+    if bool(USER_CONFIG.get("calibrate_sign", False)):
+        q = float(USER_CONFIG.get("neutral_band_q", 0.2))
+        tau, band = calibrate_threshold_from_predictions(pred_train, q)
+        metrics["signals"] = {
+            "tau": float(tau),
+            "band": float(band),
+            "train": evaluate_directional_only(y_train.values, pred_train, tau, band),
+            "valid": evaluate_directional_only(y_valid.values, pred_valid, tau, band),
+            "test": evaluate_directional_only(y_test.values, pred_test, tau, band),
+        }
+
     # 9) 保存预测结果
     save_predictions(
         os.path.join(paths["preds"], "train.csv"), df_train[DATE_COL], y_train.values, pred_train, "train"
