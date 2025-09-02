@@ -30,20 +30,9 @@
 
 
 ### 4) 线上推断（每日出信号）
-
-两种方式：
-
-- 方式A（IDE直接运行，无需命令行）：
   - 打开 `predict_next.py`，在顶部 `USER_CONFIG` 设置 `data_path`。`deploy_root` 留空时，脚本会在 `results_deploy/` 下自动选择最新的 `cut_*` 目录作为加载路径；也可显式填入某个 `results_deploy/cut_YYYY-MM-DD` 路径。
   - `days` 控制对最近 N 天做次日预测（默认 1）。
 
-- 方式B（命令行）：
-  ```
-  python GBDT_futures/predict_next.py \
-    --data_path GBDT_futures/data/沪铜_20170101_20250731.csv \
-    --deploy_root GBDT_futures/results_deploy/cut_2025-07-31 \
-    --days 1
-  ```
 
 ### 5) 常见问题
 
