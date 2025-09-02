@@ -420,22 +420,46 @@ def tune_hyperparams_optuna(
 
     def objective(trial):
         params = make_default_xgb_params(use_gpu).copy()
+        # 扩大搜索空间，并纳入 n_estimators 与 booster（含 dart）
+        booster = trial.suggest_categorical("booster", ["gbtree", "dart"])
         params.update(
             dict(
-                max_depth=trial.suggest_int("max_depth", 3, 6),
-                min_child_weight=trial.suggest_float("min_child_weight", 3.0, 50.0, log=True),
-                gamma=trial.suggest_float("gamma", 0.0, 8.0),
-                subsample=trial.suggest_float("subsample", 0.5, 0.85),
-                colsample_bytree=trial.suggest_float("colsample_bytree", 0.5, 0.85),
-                reg_alpha=trial.suggest_float("reg_alpha", 1e-2, 10.0, log=True),
-                reg_lambda=trial.suggest_float("reg_lambda", 0.5, 10.0, log=True),
-                learning_rate=trial.suggest_float("learning_rate", 0.01, 0.1, log=True),
+                booster=booster,
+                n_estimators=trial.suggest_int("n_estimators", 1000, 6000, step=250),
+                max_depth=trial.suggest_int("max_depth", 2, 10),
+                min_child_weight=trial.suggest_float("min_child_weight", 1.0, 100.0, log=True),
+                gamma=trial.suggest_float("gamma", 0.0, 12.0),
+                subsample=trial.suggest_float("subsample", 0.5, 1.0),
+                colsample_bytree=trial.suggest_float("colsample_bytree", 0.3, 1.0),
+                reg_alpha=trial.suggest_float("reg_alpha", 1e-4, 20.0, log=True),
+                reg_lambda=trial.suggest_float("reg_lambda", 1e-3, 100.0, log=True),
+                learning_rate=trial.suggest_float("learning_rate", 0.005, 0.3, log=True),
             )
         )
+        if booster == "dart":
+            params.update(
+                dict(
+                    rate_drop=trial.suggest_float("rate_drop", 0.0, 0.3),
+                    skip_drop=trial.suggest_float("skip_drop", 0.0, 0.5),
+                )
+            )
+        tune_target = str(USER_CONFIG.get("tune_target", "rmse"))
         # 若配置了时间序列 CV，则在训练集内部做滚动评估
         folds = _build_year_folds(train_dates, cv_folds) if train_dates is not None else []
+        def _score_rmse(y_va: np.ndarray, p_va: np.ndarray) -> float:
+            return float(np.sqrt(mean_squared_error(y_va, p_va)))
+        def _score_da_or_profit(X_tr: np.ndarray, y_tr: np.ndarray, X_va: np.ndarray, y_va: np.ndarray, mdl: XGBRegressor) -> float:
+            p_tr = mdl.predict(X_tr)
+            p_va = mdl.predict(X_va)
+            q = float(USER_CONFIG.get("neutral_band_q", 0.2))
+            tau, band = calibrate_threshold_from_predictions(p_tr, q)
+            m = evaluate_directional_only(y_va, p_va, tau, band)
+            if tune_target == "da":
+                return 1.0 - float(m["directional_accuracy"])  # 最小化(1-DA)
+            else:
+                return -float(m["theoretical_profit"])          # 最小化(-profit)
         if folds:
-            rmses: List[float] = []
+            scores: List[float] = []
             for tr_idx, va_idx in folds:
                 X_tr, y_tr = X_train[tr_idx], y_train[tr_idx]
                 X_va, y_va = X_train[va_idx], y_train[va_idx]
@@ -447,9 +471,11 @@ def tune_hyperparams_optuna(
                 mdl = train_xgb_with_early_stopping(
                     X_tr, y_tr, X_va, y_va, params, sample_weight=sw
                 )
-                p = mdl.predict(X_va)
-                rmses.append(float(np.sqrt(mean_squared_error(y_va, p))))
-            return float(np.mean(rmses)) if rmses else 1e9
+                if tune_target == "rmse":
+                    scores.append(_score_rmse(y_va, mdl.predict(X_va)))
+                else:
+                    scores.append(_score_da_or_profit(X_tr, y_tr, X_va, y_va, mdl))
+            return float(np.mean(scores)) if scores else 1e9
         else:
             # 否则退化为使用外部 valid
             if bool(USER_CONFIG.get("use_time_decay", False)):
@@ -460,9 +486,11 @@ def tune_hyperparams_optuna(
             model = train_xgb_with_early_stopping(
                 X_train, y_train, X_valid, y_valid, params, sample_weight=sw
             )
-            pred_valid = model.predict(X_valid)
-            rmse = float(np.sqrt(mean_squared_error(y_valid, pred_valid)))
-            return rmse
+            if tune_target == "rmse":
+                pred_valid = model.predict(X_valid)
+                return _score_rmse(y_valid, pred_valid)
+            else:
+                return _score_da_or_profit(X_train, y_train, X_valid, y_valid, model)
 
     study = optuna.create_study(direction="minimize")
     study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
