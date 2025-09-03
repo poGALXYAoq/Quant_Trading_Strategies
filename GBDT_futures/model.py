@@ -551,6 +551,9 @@ def run(
     # 1) 读取数据，构造标签
     df_raw = load_data(data_path)
     df = build_label(df_raw, price_col)
+    # 为明细日志准备：下一交易日日期与价格（与标签对齐）
+    next_dates_all = pd.to_datetime(df_raw[DATE_COL]).shift(-1).iloc[:-1].reset_index(drop=True)
+    next_prices_all = df_raw[price_col].shift(-1).iloc[:-1].reset_index(drop=True)
 
     # 2) 日期切分
     mask_train = SPLITS["train"].contains(df[DATE_COL])
@@ -670,6 +673,34 @@ def run(
 
     # 控制台输出简要指标
     print(json.dumps(metrics, ensure_ascii=False, indent=2))
+
+    # 13) 输出测试集方向明细日志（含目标日期与价格）
+    te_true = y_test.values.astype(float)
+    te_pred = pred_test.astype(float)
+    sign_true = np.sign(te_true)
+    sign_pred = np.sign(te_pred)
+    hit = (sign_true == sign_pred).astype(int)
+    abs_y = np.abs(te_true)
+    contrib_correct = abs_y * hit
+    contrib_incorrect = abs_y * (1 - hit)
+    target_date = next_dates_all.loc[df_test.index]
+    price_T = df_test[price_col].values.astype(float)
+    price_T1 = next_prices_all.loc[df_test.index].values.astype(float)
+    test_detail = pd.DataFrame({
+        DATE_COL: pd.to_datetime(df_test[DATE_COL]).dt.strftime("%Y-%m-%d"),
+        "target_date": pd.to_datetime(target_date).dt.strftime("%Y-%m-%d"),
+        "price_T": price_T,
+        "price_T1": price_T1,
+        "y_true": te_true,
+        "y_pred": te_pred,
+        "sign_true": sign_true,
+        "sign_pred": sign_pred,
+        "hit": hit,
+        "abs_y": abs_y,
+        "contrib_correct": contrib_correct,
+        "contrib_incorrect": contrib_incorrect,
+    })
+    test_detail.to_csv(os.path.join(paths["artifacts"], "test_detailed_log.csv"), index=False, encoding="utf-8-sig")
 
 
 if __name__ == "__main__":
