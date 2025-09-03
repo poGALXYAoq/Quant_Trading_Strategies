@@ -79,12 +79,19 @@ def load_data(csv_path: str) -> pd.DataFrame:
     return df
 
 
-def build_label(df: pd.DataFrame, price_col: str) -> pd.DataFrame:
+def build_label_by_type(df: pd.DataFrame, price_col: str, label_type: str) -> pd.DataFrame:
     if price_col not in df.columns:
         available = ", ".join(df.columns)
         raise ValueError(f"找不到价格列: {price_col}. 可用列: {available}")
     df = df.copy()
-    df["y"] = df[price_col].shift(-1) - df[price_col]
+    lt = str(label_type).lower().strip()
+    if lt == "close_to_close":
+        df["y"] = df[price_col].shift(-1) - df[price_col]
+    elif lt == "day_next":
+        # 次日日盘：假定 price_col 存放当日 DN=Close-Open(09:00)，标签取下一日 DN
+        df["y"] = df[price_col].shift(-1)
+    else:
+        raise ValueError(f"未知的 label_type: {label_type}")
     df = df.iloc[:-1].reset_index(drop=True)
     return df
 
@@ -550,7 +557,8 @@ def run(
 
     # 1) 读取数据，构造标签
     df_raw = load_data(data_path)
-    df = build_label(df_raw, price_col)
+    label_type = str(USER_CONFIG.get("label_type", "day_next"))
+    df = build_label_by_type(df_raw, price_col, label_type)
     # 为明细日志准备：下一交易日日期与价格（与标签对齐）
     next_dates_all = pd.to_datetime(df_raw[DATE_COL]).shift(-1).iloc[:-1].reset_index(drop=True)
     next_prices_all = df_raw[price_col].shift(-1).iloc[:-1].reset_index(drop=True)
@@ -689,8 +697,8 @@ def run(
     test_detail = pd.DataFrame({
         DATE_COL: pd.to_datetime(df_test[DATE_COL]).dt.strftime("%Y-%m-%d"),
         "target_date": pd.to_datetime(target_date).dt.strftime("%Y-%m-%d"),
-        "price_T": price_T,
-        "price_T1": price_T1,
+        "dn_T": price_T,
+        "dn_T1": price_T1,
         "y_true": te_true,
         "y_pred": te_pred,
         "sign_true": sign_true,
