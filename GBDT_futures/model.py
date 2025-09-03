@@ -430,7 +430,7 @@ def tune_hyperparams_optuna(
     def objective(trial):
         params = make_default_xgb_params(use_gpu).copy()
         # 扩大搜索空间，并纳入 n_estimators 与 booster（含 dart）
-        booster = trial.suggest_categorical("booster", ["gbtree", "dart"])
+        booster = trial.suggest_categorical("booster", ["gbtree"])
         params.update(
             dict(
                 booster=booster,
@@ -634,6 +634,7 @@ def run(
         "valid": evaluate(y_valid.values, pred_valid),
         "test": evaluate(y_test.values, pred_test),
         "best_n_estimators": int(best_n),
+        "final_n_estimators": int(model_final.get_params().get("n_estimators", best_n)),
         "best_valid_metric": {best_metric[0]: best_metric[1]} if best_metric else None,
         "used_params": params,
     }
