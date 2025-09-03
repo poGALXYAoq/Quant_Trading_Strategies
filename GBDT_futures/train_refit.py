@@ -287,6 +287,10 @@ def run_refit(
     if start_date:
         sd = pd.to_datetime(start_date)
         df_raw = df_raw[df_raw[DATE_COL] >= sd].reset_index(drop=True)
+    # 预先构造下一交易日日期与价格（与标签一一对应，长度和索引与标签后的 df 对齐）
+    next_dates_all = pd.to_datetime(df_raw[DATE_COL]).shift(-1).iloc[:-1].reset_index(drop=True)
+    next_prices_all = df_raw[price_col].shift(-1).iloc[:-1].reset_index(drop=True)
+
     df = build_label(df_raw, price_col)
 
     m_tr, m_va = build_dynamic_masks(df[DATE_COL], cut_date, valid_days, embargo_days=embargo_days)
@@ -367,6 +371,36 @@ def run_refit(
     # 保存度量
     with open(os.path.join(arts_dir, "metrics.json"), "w", encoding="utf-8") as f:
         json.dump(metrics, f, ensure_ascii=False, indent=2)
+
+    # 导出验证集方向明细日志，便于核对计算逻辑
+    va_true = y_va.values.astype(float)
+    va_pred = pred_valid.astype(float)
+    sign_true = np.sign(va_true)
+    sign_pred = np.sign(va_pred)
+    hit = (sign_true == sign_pred).astype(int)
+    abs_y = np.abs(va_true)
+    contrib_correct = abs_y * hit
+    contrib_incorrect = abs_y * (1 - hit)
+    # 补充目标日与价格信息
+    target_date = next_dates_all.loc[df_va.index]
+    price_T = df_va[price_col].values.astype(float)
+    price_T1 = next_prices_all.loc[df_va.index].values.astype(float)
+
+    valid_detail = pd.DataFrame({
+        DATE_COL: pd.to_datetime(df_va[DATE_COL]).dt.strftime("%Y-%m-%d"),
+        "target_date": pd.to_datetime(target_date).dt.strftime("%Y-%m-%d"),
+        "price_T": price_T,
+        "price_T1": price_T1,
+        "y_true": va_true,
+        "y_pred": va_pred,
+        "sign_true": sign_true,
+        "sign_pred": sign_pred,
+        "hit": hit,
+        "abs_y": abs_y,
+        "contrib_correct": contrib_correct,
+        "contrib_incorrect": contrib_incorrect,
+    })
+    valid_detail.to_csv(os.path.join(arts_dir, "valid_detailed_log.csv"), index=False, encoding="utf-8-sig")
 
     meta = dict(
         cut_date=cut_date,
