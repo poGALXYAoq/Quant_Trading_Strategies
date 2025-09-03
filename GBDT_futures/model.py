@@ -17,17 +17,19 @@ PRICE_COL_DEFAULT = "期货收盘价(活跃合约):阴极铜"
 
 # ===== 可在此处直接修改默认运行配置（无需命令行） =====
 USER_CONFIG: Dict[str, object] = {
-    "data_path": os.path.join(os.path.dirname(__file__), "data", "CU\以收盘价为label.csv"),
+    "data_path": os.path.join(os.path.dirname(__file__), "data", "CU\以收盘价为label_day_next.csv"),
     "output_dir": os.path.dirname(__file__),
     "price_col": PRICE_COL_DEFAULT,
+    # 标签类型: close_to_close(原始) | day_next(次日日盘: Close(T+1)-Open(T+1))
+    "label_type": "day_next",
     # 设备与调参
-    "use_gpu": True,
+    "use_gpu": False,
     "tune": False,
     "n_trials": 200,
     # 模型与训练控制（不改数据，仅从模型侧优化）
     "booster": "gbtree",               # 可先用 gbtree；若仍过拟合可试 "dart"
     "objective": "reg:absoluteerror",  # 稳健损失，降低极端值影响
-    "n_estimators": 1500,               # 限制上限，让早停更容易触发
+    "n_estimators": 400,               # 限制上限，让早停更容易触发
     "early_stopping_rounds": 50,        # 更积极的早停
     # 训练期内的时间序列交叉验证
     "cv_folds": 0,                      # 以 2019/2020/2021 为滚动验证
