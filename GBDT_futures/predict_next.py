@@ -12,14 +12,12 @@ PRICE_COL = "期货收盘价(活跃合约):阴极铜"
 
 # ===== 可在此处直接修改默认运行配置（无需命令行） =====
 USER_CONFIG: Dict[str, object] = {
-    "data_path": os.path.join(os.path.dirname(__file__), "data", "CU/predict.csv"),
+    "data_path": os.path.join(os.path.dirname(__file__), "data", "CU", "以收盘价为label_day_next.csv"),
     # 指向 train_refit.py 生成的部署目录根。若为空，将自动从 results_deploy 下选择最新 cut_ 目录。
     "deploy_root": "",
-    # 方式A：最近 N 天（保留兼容）
-    "days": 0,  # 设为 >0 启用此模式；否则使用日期范围
-    # 方式B：按日期范围选择（包含端点）。若输入非交易日，将自动向内收敛到最近可用日期。
-    "start_date": "2025-08-15",
-    "end_date": "2025-09-01",
+    # 预测范围：按日期选择（包含端点）。若输入非交易日，将自动向内收敛到最近可用日期。
+    "start_date": "2025-08-25",
+    "end_date": "2025-08-25",
 }
 
 
@@ -61,7 +59,7 @@ def _slice_by_date(df: pd.DataFrame, start_date: str, end_date: str) -> pd.DataF
     return df.iloc[left:right + 1]
 
 
-def run_predict(data_path: str, deploy_root: str | None, days: int, start_date: str = "", end_date: str = "") -> None:
+def run_predict(data_path: str, deploy_root: str | None, start_date: str = "", end_date: str = "") -> None:
     base_dir = os.path.dirname(__file__)
     if not deploy_root:
         deploy_root = _find_latest_deploy_root(base_dir)
@@ -92,48 +90,35 @@ def run_predict(data_path: str, deploy_root: str | None, days: int, start_date: 
     model.load_model(os.path.join(models, "xgb_model_final.json"))
 
     # 选择预测区间
-    eff_start = ""
-    eff_end = ""
-    if int(days) > 0:
-        n = int(days)
-        n = max(1, min(n, len(df)))
-        df_sel = df.tail(n).reset_index(drop=True)
-        X_sel = X.tail(n).reset_index(drop=True)
-        eff_start = str(df_sel[DATE_COL].iloc[0].date())
-        eff_end = str(df_sel[DATE_COL].iloc[-1].date())
-    else:
-        df_slice = _slice_by_date(df, start_date, end_date)
-        df_sel = df_slice.reset_index(drop=True)
-        if len(df_sel) == 0:
-            print(json.dumps({
-                "error": "所选日期范围内无可用交易日",
-                "start_date": start_date,
-                "end_date": end_date
-            }, ensure_ascii=False, indent=2))
-            return
-        # 与切片后行对齐，防止索引错配
-        X_sel = X.loc[df_slice.index].reset_index(drop=True)
-        # 定义 n 以便下方循环
-        n = len(df_sel)
-        eff_start = str(df_sel[DATE_COL].iloc[0].date())
-        eff_end = str(df_sel[DATE_COL].iloc[-1].date())
+    df_slice = _slice_by_date(df, start_date, end_date)
+    df_sel = df_slice.reset_index(drop=True)
+    if len(df_sel) == 0:
+        print(json.dumps({
+            "error": "所选日期范围内无可用交易日",
+            "start_date": start_date,
+            "end_date": end_date
+        }, ensure_ascii=False, indent=2))
+        return
+    # 与切片后行对齐，防止索引错配
+    X_sel = X.loc[df_slice.index].reset_index(drop=True)
+    eff_start = str(df_sel[DATE_COL].iloc[0].date())
+    eff_end = str(df_sel[DATE_COL].iloc[-1].date())
 
     rows = X_sel
     dates = df_sel[DATE_COL]
     closes = df_sel[PRICE_COL]
+    n_preds = len(df_sel)
 
     outputs = []
-    for i in range(n):
+    for i in range(n_preds):
         x = rows.iloc[[i]].values
         d = dates.iloc[i]
         p = float(closes.iloc[i])
         y_hat = float(model.predict(x)[0])
-        p_next = p + y_hat
         outputs.append({
             "date": str(d.date()),
             "close": p,
-            "predicted_delta": y_hat,
-            "predicted_next_close": p_next
+            "predicted_next_close": y_hat,
         })
 
     print(json.dumps({
@@ -149,7 +134,6 @@ if __name__ == "__main__":
     run_predict(
         str(cfg["data_path"]),
         (str(cfg.get("deploy_root")) or None),
-        int(cfg.get("days", 0)),
         str(cfg.get("start_date", "")),
         str(cfg.get("end_date", "")),
     )
