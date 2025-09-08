@@ -17,29 +17,24 @@ PRICE_COL_DEFAULT = "期货收盘价(活跃合约):阴极铜"
 
 # ===== 可在此处直接修改默认运行配置（无需命令行） =====
 USER_CONFIG: Dict[str, object] = {
-    "data_path": os.path.join(os.path.dirname(__file__), "data", "CU\以收盘价为label_day_next.csv"),
+    "data_path": os.path.join(os.path.dirname(__file__), "data", "CU", "以收盘价为label_day_next.csv"),
     "output_dir": os.path.dirname(__file__),
-    "price_col": PRICE_COL_DEFAULT,
-    # 标签类型: close_to_close(原始) | day_next(次日日盘: Close(T+1)-Open(T+1))
-    "label_type": "day_next",
+    # 目标列（CSV 中已准备好的目标来源列）
+    "y_col": PRICE_COL_DEFAULT,
+    # 标签对齐：shift_y=1 表示 y=下一期该列的值；若已对齐则为 0
+    "shift_y": 1,
     # 设备与调参
     "use_gpu": False,
     "tune": False,
     "n_trials": 200,
-    # 模型与训练控制（不改数据，仅从模型侧优化）
-    "booster": "gbtree",               # 可先用 gbtree；若仍过拟合可试 "dart"
-    "objective": "reg:absoluteerror",  # 稳健损失，降低极端值影响
-    "n_estimators": 400,               # 限制上限，让早停更容易触发
-    "early_stopping_rounds": 50,        # 更积极的早停
-    # 训练期内的时间序列交叉验证
-    "cv_folds": 0,                      # 以 2019/2020/2021 为滚动验证
+    # 模型与训练控制
+    "booster": "gbtree",
+    "objective": "reg:absoluteerror",
+    "n_estimators": 20000,
+    "early_stopping_rounds": 50,
     # 时间衰减样本权重（提升近期适配性）
     "use_time_decay": False,
     "half_life_days": 126,
-    # 调参与信号校准
-    "tune_target": "da",          # 可选: "rmse" | "da" | "profit"
-    "calibrate_sign": False,        # 关闭：不做阈值过滤，仅用于分析可选输出
-    "neutral_band_q": 0.0,          # 设为0表示无“无交易带”
 }
 
 
@@ -81,24 +76,24 @@ def load_data(csv_path: str) -> pd.DataFrame:
     return df
 
 
-def build_label_by_type(df: pd.DataFrame, price_col: str, label_type: str) -> pd.DataFrame:
-    if price_col not in df.columns:
+def build_label(df: pd.DataFrame, y_col: str, shift_y: int) -> pd.DataFrame:
+    if y_col not in df.columns:
         available = ", ".join(df.columns)
-        raise ValueError(f"找不到价格列: {price_col}. 可用列: {available}")
+        raise ValueError(f"找不到目标列: {y_col}. 可用列: {available}")
     df = df.copy()
-    lt = str(label_type).lower().strip()
-    if lt == "close_to_close":
-        df["y"] = df[price_col].shift(-1) - df[price_col]
-    elif lt == "day_next":
-        # 次日日盘：假定 price_col 存放当日 DN=Close-Open(09:00)，标签取下一日 DN
-        df["y"] = df[price_col].shift(-1)
+    shift_n = int(shift_y)
+    if shift_n < 0:
+        shift_n = 0
+    df["y"] = df[y_col].shift(-shift_n)
+    if shift_n > 0:
+        df = df.iloc[:-shift_n].reset_index(drop=True)
     else:
-        raise ValueError(f"未知的 label_type: {label_type}")
-    df = df.iloc[:-1].reset_index(drop=True)
+        df = df.reset_index(drop=True)
     return df
 
 
 def select_features(df: pd.DataFrame, label_col: str = "y") -> Tuple[pd.DataFrame, pd.Series, List[str]]:
+    # 仅移除日期与标签列；不再出现 price_col 相关逻辑
     feature_cols = [c for c in df.columns if c not in [DATE_COL, label_col]]
     X = df[feature_cols]
     y = df[label_col]
@@ -550,20 +545,17 @@ def save_feature_importance(path: str, model: XGBRegressor, feature_names: List[
 def run(
     data_path: str,
     output_dir: str,
-    price_col: str,
+    y_col: str,
+    shift_y: int = 0,
     use_gpu: bool = False,
     tune: bool = False,
     n_trials: int = 30,
 ) -> None:
     paths = ensure_dirs(output_dir)
 
-    # 1) 读取数据，构造标签
+    # 1) 读取数据，构造标签（不再依赖 price_col/label_type）
     df_raw = load_data(data_path)
-    label_type = str(USER_CONFIG.get("label_type", "day_next"))
-    df = build_label_by_type(df_raw, price_col, label_type)
-    # 为明细日志准备：下一交易日日期与价格（与标签对齐）
-    next_dates_all = pd.to_datetime(df_raw[DATE_COL]).shift(-1).iloc[:-1].reset_index(drop=True)
-    next_prices_all = df_raw[price_col].shift(-1).iloc[:-1].reset_index(drop=True)
+    df = build_label(df_raw, y_col, shift_y)
 
     # 2) 日期切分
     mask_train = SPLITS["train"].contains(df[DATE_COL])
@@ -719,7 +711,8 @@ if __name__ == "__main__":
     run(
         data_path=str(cfg["data_path"]),
         output_dir=str(cfg["output_dir"]),
-        price_col=str(cfg["price_col"]),
+        y_col=str(cfg["y_col"]),
+        shift_y=int(cfg.get("shift_y", 0)),
         use_gpu=bool(cfg.get("use_gpu", False)),
         tune=bool(cfg.get("tune", False)),
         n_trials=int(cfg.get("n_trials", 30)),

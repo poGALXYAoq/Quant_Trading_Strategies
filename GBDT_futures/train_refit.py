@@ -15,14 +15,15 @@ PRICE_COL_DEFAULT = "期货收盘价(活跃合约):阴极铜"
 
 # ===== 可在此处直接修改默认运行配置（无需命令行） =====
 USER_CONFIG: Dict[str, object] = {
-    "data_path": os.path.join(os.path.dirname(__file__), "data", "CU/以收盘价为label.csv"),
+    "data_path": os.path.join(os.path.dirname(__file__), "data", "CU", "以收盘价为label_day_next.csv"),
     "output_dir": os.path.dirname(__file__),
-    "price_col": PRICE_COL_DEFAULT,
+    "y_col": PRICE_COL_DEFAULT,
+    "shift_y": 1,
     # 起始使用数据的最早日期（含）。为空表示不限制，从最早可用数据开始。
     "start_date": "2018-01-01",
     # 训练贴近 cut_date（当日为验证窗右端），并用于明日预测
     "cut_date": "2025-08-25",
-    "valid_days": 60,
+    "valid_days": 90,
     "embargo_days": 1,
     # 训练细节
     "use_time_decay": False,
@@ -43,13 +44,19 @@ def load_data(csv_path: str) -> pd.DataFrame:
     return df
 
 
-def build_label(df: pd.DataFrame, price_col: str) -> pd.DataFrame:
-    if price_col not in df.columns:
+def build_label(df: pd.DataFrame, y_col: str, shift_y: int) -> pd.DataFrame:
+    if y_col not in df.columns:
         available = ", ".join(df.columns)
-        raise ValueError(f"找不到价格列: {price_col}. 可用列: {available}")
+        raise ValueError(f"找不到目标列: {y_col}. 可用列: {available}")
     df = df.copy()
-    df["y"] = df[price_col].shift(-1) - df[price_col]
-    df = df.iloc[:-1].reset_index(drop=True)
+    shift_n = int(shift_y)
+    if shift_n < 0:
+        shift_n = 0
+    df["y"] = df[y_col].shift(-shift_n)
+    if shift_n > 0:
+        df = df.iloc[:-shift_n].reset_index(drop=True)
+    else:
+        df = df.reset_index(drop=True)
     return df
 
 
@@ -271,7 +278,8 @@ def build_dynamic_masks(dates: pd.Series, cut_date: str, valid_days: int, embarg
 def run_refit(
     data_path: str,
     output_dir: str,
-    price_col: str,
+    y_col: str,
+    shift_y: int,
     start_date: str,
     cut_date: str,
     valid_days: int,
@@ -287,11 +295,8 @@ def run_refit(
     if start_date:
         sd = pd.to_datetime(start_date)
         df_raw = df_raw[df_raw[DATE_COL] >= sd].reset_index(drop=True)
-    # 预先构造下一交易日日期与价格（与标签一一对应，长度和索引与标签后的 df 对齐）
-    next_dates_all = pd.to_datetime(df_raw[DATE_COL]).shift(-1).iloc[:-1].reset_index(drop=True)
-    next_prices_all = df_raw[price_col].shift(-1).iloc[:-1].reset_index(drop=True)
 
-    df = build_label(df_raw, price_col)
+    df = build_label(df_raw, y_col, shift_y)
 
     m_tr, m_va = build_dynamic_masks(df[DATE_COL], cut_date, valid_days, embargo_days=embargo_days)
     df_tr, df_va = df[m_tr], df[m_va]
@@ -431,7 +436,8 @@ if __name__ == "__main__":
     run_refit(
         data_path=str(cfg["data_path"]),
         output_dir=str(cfg["output_dir"]),
-        price_col=str(cfg.get("price_col", PRICE_COL_DEFAULT)),
+        y_col=str(cfg.get("y_col", PRICE_COL_DEFAULT)),
+        shift_y=int(cfg.get("shift_y", 1)),
         start_date=str(cfg.get("start_date", "")),
         cut_date=str(cfg["cut_date"]),
         valid_days=int(cfg.get("valid_days", 63)),
