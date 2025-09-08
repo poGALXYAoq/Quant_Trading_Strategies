@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 from sklearn.impute import SimpleImputer
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from xgboost import XGBRegressor
+import xgboost as xgb
 
 
 DATE_COL = "date"
@@ -234,143 +234,63 @@ def train_xgb_with_early_stopping(
     params: Dict[str, object],
     sample_weight: Optional[np.ndarray] = None,
     log_training: bool = False,
-) -> XGBRegressor:
-    # 兼容不同 xgboost 版本：优先使用 device=cuda + tree_method=hist
-    # 若旧版不支持 device 参数，则回退为 gpu_hist + gpu_predictor
-    try:
-        model = XGBRegressor(**params)
-    except TypeError:
-        fallback = params.copy()
-        fallback.pop("device", None)
-        fallback["tree_method"] = "gpu_hist"
-        fallback.setdefault("predictor", "gpu_predictor")
-        model = XGBRegressor(**fallback)
+) -> xgb.Booster:
+    dtrain = xgb.DMatrix(X_train, label=y_train, weight=sample_weight)
+    dvalid = xgb.DMatrix(X_valid, label=y_valid)
+    num_boost_round = int(params.get("n_estimators", USER_CONFIG.get("n_estimators", 2000)))
     patience = int(USER_CONFIG.get("early_stopping_rounds", 100))
-    try:
-        # 新版 API：fit 支持 early_stopping_rounds（常见于 1.x 与 2.x）
-        model.fit(
-            X_train,
-            y_train,
-            eval_set=[(X_valid, y_valid)],
-            early_stopping_rounds=patience,
-            sample_weight=sample_weight,
-            verbose=log_training,
-        )
-    except TypeError:
-        # 兼容路径：使用 callbacks（2.x 支持），或最终退化为无早停训练
-        try:
-            import xgboost as xgb  # 延迟导入，避免版本差异
-
-            early_stop_cb = xgb.callback.EarlyStopping(rounds=patience, save_best=True)
-            model.fit(
-                X_train,
-                y_train,
-                eval_set=[(X_valid, y_valid)],
-                callbacks=[early_stop_cb],
-                sample_weight=sample_weight,
-                verbose=log_training,
-            )
-        except Exception:
-            # 最保守回退：不使用早停
-            if sample_weight is not None:
-                model.fit(X_train, y_train, sample_weight=sample_weight)
-            else:
-                model.fit(X_train, y_train)
-    return model
+    evals = [(dtrain, "train"), (dvalid, "valid")]
+    callbacks = [xgb.callback.EarlyStopping(rounds=patience, save_best=True)]
+    booster: xgb.Booster = xgb.train(
+        params=params,
+        dtrain=dtrain,
+        num_boost_round=num_boost_round,
+        evals=evals,
+        callbacks=callbacks,
+        verbose_eval=log_training,
+    )
+    if not hasattr(booster, "best_iteration") or booster.best_iteration is None:
+        raise RuntimeError("未检测到早停的 best_iteration。")
+    return booster
 
 
-def infer_best_n_estimators(model: XGBRegressor) -> int:
-    # 1) 直接属性
-    best_it = getattr(model, "best_iteration", None)
+def infer_best_n_estimators(booster: xgb.Booster) -> int:
+    best_it = getattr(booster, "best_iteration", None)
     if best_it is not None:
-        try:
-            return int(best_it) + 1
-        except Exception:
-            pass
-    best_limit = getattr(model, "best_ntree_limit", None)
-    if best_limit is not None:
-        try:
-            return int(best_limit)
-        except Exception:
-            pass
-    # 2) Booster 属性
+        return int(best_it) + 1
     try:
-        booster = model.get_booster()
-        if hasattr(booster, "best_iteration") and booster.best_iteration is not None:
-            return int(booster.best_iteration) + 1
-        if hasattr(booster, "best_ntree_limit") and booster.best_ntree_limit is not None:
-            return int(booster.best_ntree_limit)
+        return int(booster.num_boosted_rounds())
     except Exception:
-        pass
-    # 3) 从 evals_result 里解析（兼容 evals_result 或 evals_result_；validation_0 的 rmse/mae 最小点）
-    try:
-        er_m = getattr(model, "evals_result", None)
-        er = er_m() if callable(er_m) else getattr(model, "evals_result_", None)
-        # 常见 key：'validation_0' 或 'eval'
-        if er:
-            keys = list(er.keys())
-            for key in ["validation_0", "eval", "valid"]:
-                if key in er:
-                    metrics = er[key]
-                    metric_name = "rmse" if "rmse" in metrics else ("mae" if "mae" in metrics else list(metrics.keys())[0])
-                    values = metrics[metric_name]
-                    if isinstance(values, list) and len(values) > 0:
-                        best_idx = int(np.argmin(values))
-                        return best_idx + 1
-            if keys:
-                first_key = keys[0]
-                metrics = er[first_key]
-                metric_name = list(metrics.keys())[0]
-                values = metrics[metric_name]
-                best_idx = int(np.argmin(values))
-                return best_idx + 1
-    except Exception:
-        pass
-    # 4) 回退：使用设定的 n_estimators
-    return int(model.get_params().get("n_estimators", 100))
+        return int(USER_CONFIG.get("n_estimators", 0))
 
 
-def extract_best_validation_metric(model: XGBRegressor) -> tuple[str, float] | None:
-    try:
-        er_m = getattr(model, "evals_result", None)
-        er = er_m() if callable(er_m) else getattr(model, "evals_result_", None)
-        if not er:
-            return None
-        for key in ["validation_0", "eval", "valid"]:
-            if key in er:
-                metrics = er[key]
-                if "rmse" in metrics:
-                    values = metrics["rmse"];  return ("rmse", float(np.min(values)))
-                if "mae" in metrics:
-                    values = metrics["mae"];   return ("mae", float(np.min(values)))
-                mname = list(metrics.keys())[0]
-                values = metrics[mname];       return (mname, float(np.min(values)))
-        first_key = list(er.keys())[0]
-        metrics = er[first_key]
-        mname = list(metrics.keys())[0]
-        values = metrics[mname]
-        return (mname, float(np.min(values)))
-    except Exception:
-        return None
+def extract_best_validation_metric(booster: xgb.Booster, eval_metric_name: str) -> tuple[str, float] | None:
+    best_score = getattr(booster, "best_score", None)
+    if best_score is not None:
+        try:
+            return (str(eval_metric_name), float(best_score))
+        except Exception:
+            return (str(eval_metric_name), float(best_score))
+    return None
 
 
 def refit_final_model(
-    best_model: XGBRegressor,
+    best_booster: xgb.Booster,
     X_train_valid: np.ndarray,
     y_train_valid: np.ndarray,
+    params: Dict[str, object],
     sample_weight: Optional[np.ndarray] = None,
-) -> XGBRegressor:
-    # 依据早停得到的最佳迭代数进行复训
-    best_n_estimators = infer_best_n_estimators(best_model)
-    base_params = best_model.get_params()
-    base_params["n_estimators"] = int(best_n_estimators)
-    # 去掉与训练时冲突的回调/早停状态
-    final_model = XGBRegressor(**base_params)
-    if sample_weight is not None:
-        final_model.fit(X_train_valid, y_train_valid, sample_weight=sample_weight)
-    else:
-        final_model.fit(X_train_valid, y_train_valid)
-    return final_model
+) -> xgb.Booster:
+    best_n_estimators = infer_best_n_estimators(best_booster)
+    dtrval = xgb.DMatrix(X_train_valid, label=y_train_valid, weight=sample_weight)
+    booster = xgb.train(
+        params=params,
+        dtrain=dtrval,
+        num_boost_round=int(best_n_estimators),
+        evals=[(dtrval, "trval")],
+        verbose_eval=False,
+    )
+    return booster
 
 
 def _time_decay_weights(length: int, half_life: float) -> np.ndarray:
@@ -452,10 +372,10 @@ def tune_hyperparams_optuna(
         folds = _build_year_folds(train_dates, cv_folds) if train_dates is not None else []
         def _score_rmse(y_va: np.ndarray, p_va: np.ndarray) -> float:
             return float(np.sqrt(mean_squared_error(y_va, p_va)))
-        def _score_da_or_profit(X_tr: np.ndarray, y_tr: np.ndarray, X_va: np.ndarray, y_va: np.ndarray, mdl: XGBRegressor) -> float:
-            p_tr = mdl.predict(X_tr)
-            p_va = mdl.predict(X_va)
-            q = float(USER_CONFIG.get("neutral_band_q", 0.2))
+        def _score_da_or_profit(X_tr: np.ndarray, y_tr: np.ndarray, X_va: np.ndarray, y_va: np.ndarray, booster: xgb.Booster) -> float:
+            p_tr = booster.predict(xgb.DMatrix(X_tr))
+            p_va = booster.predict(xgb.DMatrix(X_va))
+            q = 0.2
             tau, band = calibrate_threshold_from_predictions(p_tr, q)
             m = evaluate_directional_only(y_va, p_va, tau, band)
             if tune_target == "da":
@@ -472,13 +392,13 @@ def tune_hyperparams_optuna(
                     sw = _time_decay_weights(len(y_tr), half_life)
                 else:
                     sw = None
-                mdl = train_xgb_with_early_stopping(
+                booster_cv = train_xgb_with_early_stopping(
                     X_tr, y_tr, X_va, y_va, params, sample_weight=sw
                 )
                 if tune_target == "rmse":
-                    scores.append(_score_rmse(y_va, mdl.predict(X_va)))
+                    scores.append(_score_rmse(y_va, booster_cv.predict(xgb.DMatrix(X_va))))
                 else:
-                    scores.append(_score_da_or_profit(X_tr, y_tr, X_va, y_va, mdl))
+                    scores.append(_score_da_or_profit(X_tr, y_tr, X_va, y_va, booster_cv))
             return float(np.mean(scores)) if scores else 1e9
         else:
             # 否则退化为使用外部 valid
@@ -487,14 +407,14 @@ def tune_hyperparams_optuna(
                 sw = _time_decay_weights(len(y_train), half_life)
             else:
                 sw = None
-            model = train_xgb_with_early_stopping(
+            booster = train_xgb_with_early_stopping(
                 X_train, y_train, X_valid, y_valid, params, sample_weight=sw
             )
             if tune_target == "rmse":
-                pred_valid = model.predict(X_valid)
+                pred_valid = booster.predict(xgb.DMatrix(X_valid))
                 return _score_rmse(y_valid, pred_valid)
             else:
-                return _score_da_or_profit(X_train, y_train, X_valid, y_valid, model)
+                return _score_da_or_profit(X_train, y_train, X_valid, y_valid, booster)
 
     study = optuna.create_study(direction="minimize")
     study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
@@ -519,25 +439,15 @@ def save_predictions(
     out.to_csv(path, index=False, encoding="utf-8-sig")
 
 
-def save_feature_importance(path: str, model: XGBRegressor, feature_names: List[str]) -> None:
-    try:
-        # 基于 gain 的重要性更具解释性
-        booster = model.get_booster()
-        score = booster.get_score(importance_type="gain")
-        # get_score 返回 dict，key 是 f{index}
-        importance = np.zeros(len(feature_names), dtype=float)
-        for k, v in score.items():
-            if k.startswith("f") and k[1:].isdigit():
-                idx = int(k[1:])
-                if 0 <= idx < len(feature_names):
-                    importance[idx] = float(v)
-        df_imp = pd.DataFrame({"feature": feature_names, "importance_gain": importance})
-    except Exception:
-        # 回退到 sklearn 的属性
-        importance = getattr(model, "feature_importances_", None)
-        if importance is None:
-            return
-        df_imp = pd.DataFrame({"feature": feature_names, "importance_weight": importance})
+def save_feature_importance(path: str, booster: xgb.Booster, feature_names: List[str]) -> None:
+    score = booster.get_score(importance_type="gain")
+    importance = np.zeros(len(feature_names), dtype=float)
+    for k, v in score.items():
+        if k.startswith("f") and k[1:].isdigit():
+            idx = int(k[1:])
+            if 0 <= idx < len(feature_names):
+                importance[idx] = float(v)
+    df_imp = pd.DataFrame({"feature": feature_names, "importance_gain": importance})
     df_imp.sort_values(df_imp.columns[-1], ascending=False, inplace=True)
     df_imp.to_csv(path, index=False, encoding="utf-8-sig")
 
@@ -601,7 +511,7 @@ def run(
         sw_train = None
         sw_trval = None
 
-    model_es = train_xgb_with_early_stopping(
+    booster_es = train_xgb_with_early_stopping(
         X_train_imp, y_train.values, X_valid_imp, y_valid.values, params,
         sample_weight=sw_train,
         log_training=True,
@@ -610,38 +520,43 @@ def run(
     # 6) 复训（训练+验证）并在测试集上推断
     X_trval_imp = np.vstack([X_train_imp, X_valid_imp])
     y_trval = np.concatenate([y_train.values, y_valid.values])
-    model_final = refit_final_model(model_es, X_trval_imp, y_trval, sample_weight=sw_trval)
+    booster_final = refit_final_model(booster_es, X_trval_imp, y_trval, params, sample_weight=sw_trval)
 
     # 7) 预测
-    pred_train = model_es.predict(X_train_imp)
-    pred_valid = model_es.predict(X_valid_imp)
-    pred_test = model_final.predict(X_test_imp)
+    pred_train = booster_es.predict(xgb.DMatrix(X_train_imp))
+    pred_valid = booster_es.predict(xgb.DMatrix(X_valid_imp))
+    pred_test = booster_final.predict(xgb.DMatrix(X_test_imp))
 
     # 8) 评估
     # 附加早停与验证最优度量信息，便于确认是否触发
-    best_n = infer_best_n_estimators(model_es)
-    best_metric = extract_best_validation_metric(model_es)
+    best_n = infer_best_n_estimators(booster_es)
+    best_metric = extract_best_validation_metric(booster_es, params.get("eval_metric", "mae"))
+    # 训练细节：用于判断是否触发早停与原因
+    metric_name = params.get("eval_metric", "mae")
+    n_rounds_set = int(params.get("n_estimators", USER_CONFIG.get("n_estimators", 0)))
+    patience_used = int(USER_CONFIG.get("early_stopping_rounds", 100))
+    stopped_early = int(best_n) < int(n_rounds_set if n_rounds_set > 0 else best_n)
+    no_improve_rounds_after_best = (n_rounds_set - 1 - (int(best_n) - 1)) if n_rounds_set > 0 else None
     metrics = {
         "train": evaluate(y_train.values, pred_train),
         "valid": evaluate(y_valid.values, pred_valid),
         "test": evaluate(y_test.values, pred_test),
         "best_n_estimators": int(best_n),
-        "final_n_estimators": int(model_final.get_params().get("n_estimators", best_n)),
+        "final_n_estimators": int(best_n),
         "best_valid_metric": {best_metric[0]: best_metric[1]} if best_metric else None,
         "used_params": params,
+        "training_info": {
+            "eval_metric": metric_name,
+            "patience": patience_used,
+            "n_estimators_set": int(n_rounds_set if n_rounds_set > 0 else best_n),
+            "best_iteration": int(best_n) - 1,
+            "num_rounds_recorded": int(n_rounds_set),
+            "stopped_early": bool(stopped_early),
+            "no_improve_rounds_after_best": int(no_improve_rounds_after_best) if no_improve_rounds_after_best is not None else None,
+        },
     }
 
-    # 8.1) 若开启信号校准，则附加输出校准后的方向/盈亏指标
-    if bool(USER_CONFIG.get("calibrate_sign", False)):
-        q = float(USER_CONFIG.get("neutral_band_q", 0.2))
-        tau, band = calibrate_threshold_from_predictions(pred_train, q)
-        metrics["signals"] = {
-            "tau": float(tau),
-            "band": float(band),
-            "train": evaluate_directional_only(y_train.values, pred_train, tau, band),
-            "valid": evaluate_directional_only(y_valid.values, pred_valid, tau, band),
-            "test": evaluate_directional_only(y_test.values, pred_test, tau, band),
-        }
+    # 8.1) 保留基础指标即可
 
     # 9) 保存预测结果
     save_predictions(
@@ -655,8 +570,8 @@ def run(
     )
 
     # 10) 保存模型与要素
-    model_es.save_model(os.path.join(paths["models"], "xgb_model_es.json"))
-    model_final.save_model(os.path.join(paths["models"], "xgb_model_final.json"))
+    booster_es.save_model(os.path.join(paths["models"], "xgb_model_es.json"))
+    booster_final.save_model(os.path.join(paths["models"], "xgb_model_final.json"))
     # 保存填充器与特征名
     pd.Series(feature_cols).to_csv(
         os.path.join(paths["artifacts"], "feature_names.csv"), index=False, header=["feature"], encoding="utf-8-sig"
@@ -667,7 +582,7 @@ def run(
 
     # 11) 特征重要性
     save_feature_importance(
-        os.path.join(paths["artifacts"], "feature_importance.csv"), model_final, feature_cols
+        os.path.join(paths["artifacts"], "feature_importance.csv"), booster_final, feature_cols
     )
 
     # 12) 保存度量
