@@ -190,39 +190,32 @@ def evaluate_directional_only(y_true: np.ndarray, y_score: np.ndarray, tau: floa
 
 
 def make_default_xgb_params(use_gpu: bool = False) -> Dict[str, object]:
-    # 更强正则 + 更浅的树，降低过拟合风险
+    # 与 xgboost.train 一致的参数命名
     params: Dict[str, object] = dict(
-        n_estimators=int(USER_CONFIG.get("n_estimators", 2000)),
-        learning_rate=0.03,
-        max_depth=4,
+        learning_rate=0.01,
+        max_depth=3,
         subsample=0.7,
         colsample_bytree=0.6,
-        min_child_weight=10.0,
-        gamma=1.0,
+        min_child_weight=50.0,
+        gamma=5.0,
         reg_alpha=0.1,
-        reg_lambda=2.0,
+        reg_lambda=10.0,
+        # 使用 y 的中位数作为初始预测水平更稳健（训练前将被覆盖）
         base_score=0.0,
         objective=str(USER_CONFIG.get("objective", "reg:squarederror")),
         booster=str(USER_CONFIG.get("booster", "gbtree")),
-        n_jobs=-1,
-        random_state=42,
-        tree_method="hist",   # 统一 hist，GPU 由 device 控制（xgboost>=2 推荐）
+        tree_method="hist",
+        device=("cuda" if use_gpu else "cpu"),
         verbosity=0,
+        seed=42,
     )
-    # 评估指标随目标自动选择
     obj = params["objective"]
-    if obj == "reg:absoluteerror":
-        params["eval_metric"] = "mae"
-    else:
-        params["eval_metric"] = "rmse"
-    # dart 轻量默认
+    params["eval_metric"] = "mae" if obj == "reg:absoluteerror" else "rmse"
     if params["booster"] == "dart":
         params.setdefault("rate_drop", 0.1)
         params.setdefault("skip_drop", 0.0)
         params.setdefault("sample_type", "uniform")
         params.setdefault("normalize_type", "tree")
-    if use_gpu:
-        params["device"] = "cuda"  # xgboost>=2.0 推荐写法
     return params
 
 
@@ -501,6 +494,12 @@ def run(
         )
     else:
         params = make_default_xgb_params(use_gpu)
+
+    # 将 base_score 设置为训练标签的中位数，可缓解第一轮偏置带来的度量不稳
+    try:
+        params["base_score"] = float(np.median(y_train.values.astype(float)))
+    except Exception:
+        pass
 
     # 可选时间衰减权重
     if bool(USER_CONFIG.get("use_time_decay", False)):
