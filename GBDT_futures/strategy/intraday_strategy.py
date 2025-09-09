@@ -22,8 +22,7 @@ class BacktestConfig:
     initial_capital: float = 500_000.0
     lot_multiplier: float = 5.0
     lots: int = 1
-    neutral_band_q: float = 0.0
-    tau_mode: str = "zero"  # or zero or median_train
+    proba_threshold: float = 0.5  # 概率阈值，超过才开仓
     price_date_col: Optional[str] = None
     price_open_col: Optional[str] = None
     price_close_col: Optional[str] = None
@@ -36,6 +35,7 @@ USER_CONFIG = BacktestConfig(
     predictions_dir=os.path.join(_BASE_DIR, "results", "predictions"),
     price_csv_path="GBDT_futures/data/CU/CU888.csv",
     output_dir=os.path.join(_BASE_DIR, "results", "strategy", "intraday"),
+    proba_threshold=0.49,  # 默认0.5表示只要预测概率偏向一边就交易
 )
 
 
@@ -66,11 +66,12 @@ def _read_predictions(predictions_dir: str, splits: Tuple[str, ...]) -> pd.DataF
         f = os.path.join(predictions_dir, f"{name}.csv")
         if os.path.exists(f):
             df = pd.read_csv(f, encoding="utf-8-sig")
-            if DATE_COL not in df.columns or "y_pred" not in df.columns:
-                raise ValueError(f"预测文件缺少必要列: {f}")
+            required_cols = [DATE_COL, "y_pred_p0", "y_pred_p1", "y_pred_p2"]
+            if not all(c in df.columns for c in required_cols):
+                raise ValueError(f"预测文件缺少必要的概率列: {f}")
             df[DATE_COL] = pd.to_datetime(df[DATE_COL])
             df["split"] = name
-            frames.append(df[[DATE_COL, "y_pred", "split"]].copy())
+            frames.append(df[required_cols + ["split"]].copy())
     if not frames:
         raise FileNotFoundError(
             f"未在 {predictions_dir} 找到 train/valid/test 预测CSV。请先运行模型脚本生成预测。"
@@ -144,25 +145,14 @@ def _read_prices(price_csv_path: str, cfg: BacktestConfig) -> pd.DataFrame:
     return out
 
 
-def _compute_tau_band(df_pred: pd.DataFrame, q: float, mode: str) -> Tuple[float, float]:
-    if q <= 0.0:
-        return (0.0 if mode == "zero" else float(df_pred["y_pred"].median()), 0.0)
-    df_train = df_pred[df_pred["split"] == "train"]
-    base = df_train["y_pred"].values if len(df_train) > 0 else df_pred["y_pred"].values
-    tau = 0.0 if mode == "zero" else float(np.median(base))
-    band = float(np.quantile(np.abs(base - tau), q))
-    return tau, band
-
-
-def _apply_signal(y_score: np.ndarray, tau: float, band: float) -> np.ndarray:
-    z = y_score - float(tau)
-    sig = np.zeros_like(z, dtype=int)
-    if band > 0.0:
-        sig[z > band] = 1
-        sig[z < -band] = -1
-    else:
-        sig[z > 0] = 1
-        sig[z < 0] = -1
+def _apply_signal(df_pred: pd.DataFrame, threshold: float) -> np.ndarray:
+    """根据预测概率和阈值生成交易信号。"""
+    p_down = df_pred["y_pred_p0"].values
+    p_up = df_pred["y_pred_p2"].values
+    
+    sig = np.zeros(len(df_pred), dtype=int)
+    sig[p_up > threshold] = 1
+    sig[p_down > threshold] = -1
     return sig
 
 
@@ -202,8 +192,7 @@ def _compute_consecutive_stats(pnls: np.ndarray) -> Tuple[int, int]:
 
 def backtest_intraday(cfg: BacktestConfig) -> Tuple[pd.DataFrame, Dict[str, float]]:
     preds = _read_predictions(cfg.predictions_dir, cfg.splits_to_use)
-    tau, band = _compute_tau_band(preds, cfg.neutral_band_q, cfg.tau_mode)
-    preds["signal_int"] = _apply_signal(preds["y_pred"].values.astype(float), tau, band)
+    preds["signal_int"] = _apply_signal(preds, cfg.proba_threshold)
 
     prices = _read_prices(cfg.price_csv_path, cfg)
     # 构造下一交易日映射
@@ -289,8 +278,7 @@ def backtest_intraday(cfg: BacktestConfig) -> Tuple[pd.DataFrame, Dict[str, floa
         "total_return": total_ret,
         "win_rate": wins,
         "max_drawdown": float(mdd),
-        "tau": float(tau),
-        "band": float(band),
+        "proba_threshold": float(cfg.proba_threshold),
         "lots": int(cfg.lots),
         "multiplier": float(cfg.lot_multiplier),
         # 扩展指标
