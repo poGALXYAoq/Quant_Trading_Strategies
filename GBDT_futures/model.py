@@ -23,13 +23,16 @@ USER_CONFIG: Dict[str, object] = {
     "y_col": PRICE_COL_DEFAULT,
     # 标签对齐：shift_y=1 表示 y=下一期该列的值；若已对齐则为 0
     "shift_y": 1,
+    # 盘整阈值：涨跌幅绝对值低于此值被视为盘整
+    "flat_threshold": 20.0,
     # 设备与调参
     "use_gpu": False,
     "tune": False,
     "n_trials": 200,
     # 模型与训练控制
     "booster": "gbtree",
-    "objective": "reg:absoluteerror",
+    "objective": "multi:softprob",
+    "num_class": 3,
     "n_estimators": 20000,
     "early_stopping_rounds": 50,
     # 时间衰减样本权重（提升近期适配性）
@@ -76,7 +79,7 @@ def load_data(csv_path: str) -> pd.DataFrame:
     return df
 
 
-def build_label(df: pd.DataFrame, y_col: str, shift_y: int) -> pd.DataFrame:
+def build_label(df: pd.DataFrame, y_col: str, shift_y: int, flat_threshold: float) -> pd.DataFrame:
     if y_col not in df.columns:
         available = ", ".join(df.columns)
         raise ValueError(f"找不到目标列: {y_col}. 可用列: {available}")
@@ -458,7 +461,9 @@ def run(
 
     # 1) 读取数据，构造标签（不再依赖 price_col/label_type）
     df_raw = load_data(data_path)
-    df = build_label(df_raw, y_col, shift_y)
+    df = build_label(
+        df_raw, y_col, shift_y, flat_threshold=float(USER_CONFIG.get("flat_threshold", 0.0))
+    )
 
     # 2) 日期切分
     mask_train = SPLITS["train"].contains(df[DATE_COL])
