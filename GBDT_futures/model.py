@@ -113,60 +113,23 @@ def select_features(df: pd.DataFrame, label_col: str = "y") -> Tuple[pd.DataFram
     return X, y, feature_cols
 
 
-def directional_accuracy(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    s_true = np.sign(y_true)
-    s_pred = np.sign(y_pred)
-    return float(np.mean(s_true == s_pred))
-
-
-def _directional_trade_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float | None]:
-    y_true = np.asarray(y_true, dtype=float)
-    y_pred = np.asarray(y_pred, dtype=float)
-    mask = np.isfinite(y_true) & np.isfinite(y_pred)
-    y_true = y_true[mask]
-    y_pred = y_pred[mask]
-    if y_true.size == 0:
-        return {
-            "volatility_correct": 0.0,
-            "volatility_incorrect": 0.0,
-            "theoretical_profit": 0.0,
-            "profit_loss_ratio": None,
-            "long_signal_ratio": 0.0,
-            "short_signal_ratio": 0.0,
-        }
-    s_true = np.sign(y_true)
-    s_pred = np.sign(y_pred)
-    correct_mask = s_true == s_pred
-    incorrect_mask = ~correct_mask
-    vol_correct = float(np.sum(np.abs(y_true[correct_mask])))
-    vol_incorrect = float(np.sum(np.abs(y_true[incorrect_mask])))
-    theoretical_profit = float(vol_correct - vol_incorrect)
-    pl_ratio: float | None
-    if vol_incorrect == 0.0:
-        pl_ratio = None
-    else:
-        pl_ratio = float(vol_correct / vol_incorrect)
-    long_ratio = float(np.mean(y_pred > 0))
-    short_ratio = float(np.mean(y_pred < 0))
-    return {
-        "volatility_correct": vol_correct,
-        "volatility_incorrect": vol_incorrect,
-        "theoretical_profit": theoretical_profit,
-        "profit_loss_ratio": pl_ratio,
-        "long_signal_ratio": long_ratio,
-        "short_signal_ratio": short_ratio,
-    }
+def classification_accuracy(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    """计算分类准确度。"""
+    return float(np.mean(y_true == y_pred))
 
 
 def evaluate(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float | None]:
-    rmse = float(np.sqrt(mean_squared_error(y_true, y_pred)))
-    mae = float(mean_absolute_error(y_true, y_pred))
-    r2 = float(r2_score(y_true, y_pred))
-    da = directional_accuracy(y_true, y_pred)
-    extra = _directional_trade_metrics(y_true, y_pred)
-    out: Dict[str, float | None] = {"rmse": rmse, "mae": mae, "r2": r2, "directional_accuracy": da}
-    out.update(extra)
-    return out
+    """评估分类模型的准确度。 y_true 和 y_pred 均为类别标签 (0, 1, 2)。"""
+    accuracy = classification_accuracy(y_true, y_pred)
+    # 可以在此添加更多分类指标，如 precision, recall 等
+    from sklearn.metrics import classification_report
+    report = classification_report(y_true, y_pred, output_dict=True, zero_division=0)
+    return {
+        "accuracy": accuracy,
+        "precision_macro": report["macro avg"]["precision"],
+        "recall_macro": report["macro avg"]["recall"],
+        "f1_macro": report["macro avg"]["f1-score"],
+    }
 
 
 def _sign_with_threshold(y_score: np.ndarray, tau: float = 0.0, band: float = 0.0) -> np.ndarray:
@@ -189,17 +152,6 @@ def calibrate_threshold_from_predictions(y_score: np.ndarray, neutral_band_q: fl
     else:
         band = 0.0
     return tau, band
-
-
-def evaluate_directional_only(y_true: np.ndarray, y_score: np.ndarray, tau: float = 0.0, band: float = 0.0) -> Dict[str, float | None]:
-    y_true = np.asarray(y_true, dtype=float)
-    s_pred = _sign_with_threshold(np.asarray(y_score, dtype=float), tau, band)
-    s_true = np.sign(y_true)
-    da = float(np.mean(s_true == s_pred))
-    extra = _directional_trade_metrics(y_true, s_pred)
-    out: Dict[str, float | None] = {"directional_accuracy": da}
-    out.update(extra)
-    return out
 
 
 def make_default_xgb_params(use_gpu: bool = False) -> Dict[str, object]:
@@ -438,13 +390,15 @@ def save_predictions(
     path: str,
     dates: pd.Series,
     y_true: np.ndarray,
-    y_pred: np.ndarray,
+    y_pred_proba: np.ndarray,
     split: str,
 ) -> None:
     out = pd.DataFrame({
-        DATE_COL: pd.to_datetime(dates).dt.strftime("%Y-%m-%d"),
-        "y_true": y_true,
-        "y_pred": y_pred,
+        "date": pd.to_datetime(dates).dt.strftime("%Y-%m-%d"),
+        "y_true_class": y_true, # 类别 0, 1, 2
+        "y_pred_p0": y_pred_proba[:, 0], # 类别0 (下跌) 的概率
+        "y_pred_p1": y_pred_proba[:, 1], # 类别1 (盘整) 的概率
+        "y_pred_p2": y_pred_proba[:, 2], # 类别2 (上涨) 的概率
         "split": split,
     })
     out.to_csv(path, index=False, encoding="utf-8-sig")
@@ -537,10 +491,15 @@ def run(
     y_trval = np.concatenate([y_train.values, y_valid.values])
     booster_final = refit_final_model(booster_es, X_trval_imp, y_trval, params, sample_weight=sw_trval)
 
-    # 7) 预测
-    pred_train = booster_es.predict(xgb.DMatrix(X_train_imp))
-    pred_valid = booster_es.predict(xgb.DMatrix(X_valid_imp))
-    pred_test = booster_final.predict(xgb.DMatrix(X_test_imp))
+    # 7) 预测 (输出概率)
+    pred_train_proba = booster_es.predict(xgb.DMatrix(X_train_imp))
+    pred_valid_proba = booster_es.predict(xgb.DMatrix(X_valid_imp))
+    pred_test_proba = booster_final.predict(xgb.DMatrix(X_test_imp))
+    
+    # 从概率生成类别用于评估
+    pred_train_class = np.argmax(pred_train_proba, axis=1)
+    pred_valid_class = np.argmax(pred_valid_proba, axis=1)
+    pred_test_class = np.argmax(pred_test_proba, axis=1)
 
     # 8) 评估
     # 附加早停与验证最优度量信息，便于确认是否触发
@@ -553,9 +512,9 @@ def run(
     stopped_early = int(best_n) < int(n_rounds_set if n_rounds_set > 0 else best_n)
     no_improve_rounds_after_best = (n_rounds_set - 1 - (int(best_n) - 1)) if n_rounds_set > 0 else None
     metrics = {
-        "train": evaluate(y_train.values, pred_train),
-        "valid": evaluate(y_valid.values, pred_valid),
-        "test": evaluate(y_test.values, pred_test),
+        "train": evaluate(y_train.values, pred_train_class),
+        "valid": evaluate(y_valid.values, pred_valid_class),
+        "test": evaluate(y_test.values, pred_test_class),
         "best_n_estimators": int(best_n),
         "final_n_estimators": int(best_n),
         "best_valid_metric": {best_metric[0]: best_metric[1]} if best_metric else None,
@@ -575,13 +534,13 @@ def run(
 
     # 9) 保存预测结果
     save_predictions(
-        os.path.join(paths["preds"], "train.csv"), df_train[DATE_COL], y_train.values, pred_train, "train"
+        os.path.join(paths["preds"], "train.csv"), df_train[DATE_COL], y_train.values, pred_train_proba, "train"
     )
     save_predictions(
-        os.path.join(paths["preds"], "valid.csv"), df_valid[DATE_COL], y_valid.values, pred_valid, "valid"
+        os.path.join(paths["preds"], "valid.csv"), df_valid[DATE_COL], y_valid.values, pred_valid_proba, "valid"
     )
     save_predictions(
-        os.path.join(paths["preds"], "test.csv"), df_test[DATE_COL], y_test.values, pred_test, "test"
+        os.path.join(paths["preds"], "test.csv"), df_test[DATE_COL], y_test.values, pred_test_proba, "test"
     )
 
     # 10) 保存模型与要素
