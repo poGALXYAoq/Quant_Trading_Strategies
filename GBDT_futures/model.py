@@ -87,8 +87,18 @@ def build_label(df: pd.DataFrame, y_col: str, shift_y: int, flat_threshold: floa
     shift_n = int(shift_y)
     if shift_n < 0:
         shift_n = 0
-    df["y"] = df[y_col].shift(-shift_n)
+    
+    y_raw = df[y_col].shift(-shift_n)
+    
+    # 根据阈值定义三分类标签
+    y_class = np.ones_like(y_raw, dtype=int) * 1 # 默认为 1 (盘整)
+    y_class[y_raw > flat_threshold] = 2   # 2 (上涨)
+    y_class[y_raw < -flat_threshold] = 0  # 0 (下跌)
+    
+    df["y"] = y_class
+
     if shift_n > 0:
+        # 移除因 shift 产生的 NaN 标签行
         df = df.iloc[:-shift_n].reset_index(drop=True)
     else:
         df = df.reset_index(drop=True)
