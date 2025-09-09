@@ -263,6 +263,7 @@ def backtest_intraday(cfg: BacktestConfig) -> Tuple[pd.DataFrame, Dict[str, floa
     max_win_streak, max_lose_streak = _compute_consecutive_stats(results["pnl"].values.astype(float))
     avg_win = float(results.loc[results["pnl"] > 0, "pnl"].mean()) if (results["pnl"] > 0).any() else 0.0
     avg_loss = float(results.loc[results["pnl"] < 0, "pnl"].mean()) if (results["pnl"] < 0).any() else 0.0
+    avg_win_loss_ratio = _safe_div(avg_win, abs(avg_loss) if avg_loss != 0 else 0.0)
     # 偏度峰度
     try:
         from scipy.stats import skew, kurtosis  # type: ignore
@@ -292,6 +293,7 @@ def backtest_intraday(cfg: BacktestConfig) -> Tuple[pd.DataFrame, Dict[str, floa
         "expected_pnl_per_trade": float(exp_value),
         "avg_win": float(avg_win),
         "avg_loss": float(avg_loss),
+        "avg_win_loss_ratio": None if avg_win_loss_ratio is None else float(avg_win_loss_ratio),
         "max_win_streak": int(max_win_streak),
         "max_loss_streak": int(max_lose_streak),
         "skew": skewness,
