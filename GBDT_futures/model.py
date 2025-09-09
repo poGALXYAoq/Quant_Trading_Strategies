@@ -213,8 +213,6 @@ def make_default_xgb_params(use_gpu: bool = False) -> Dict[str, object]:
         gamma=5.0,
         reg_alpha=0.1,
         reg_lambda=10.0,
-        # 使用 y 的中位数作为初始预测水平更稳健（训练前将被覆盖）
-        base_score=0.0,
         objective=str(USER_CONFIG.get("objective", "reg:squarederror")),
         booster=str(USER_CONFIG.get("booster", "gbtree")),
         tree_method="hist",
@@ -223,7 +221,14 @@ def make_default_xgb_params(use_gpu: bool = False) -> Dict[str, object]:
         seed=42,
     )
     obj = params["objective"]
-    params["eval_metric"] = "mae" if obj == "reg:absoluteerror" else "rmse"
+    if "multi" in str(obj):
+        params["eval_metric"] = "mlogloss"
+        params["num_class"] = int(USER_CONFIG.get("num_class", 3))
+    elif obj == "reg:absoluteerror":
+        params["eval_metric"] = "mae"
+    else:
+        params["eval_metric"] = "rmse"
+
     if params["booster"] == "dart":
         params.setdefault("rate_drop", 0.1)
         params.setdefault("skip_drop", 0.0)
@@ -510,11 +515,7 @@ def run(
     else:
         params = make_default_xgb_params(use_gpu)
 
-    # 将 base_score 设置为训练标签的中位数，可缓解第一轮偏置带来的度量不稳
-    try:
-        params["base_score"] = float(np.median(y_train.values.astype(float)))
-    except Exception:
-        pass
+    # 对于分类问题，不再需要设置基于中位数的 base_score
 
     # 可选时间衰减权重
     if bool(USER_CONFIG.get("use_time_decay", False)):
