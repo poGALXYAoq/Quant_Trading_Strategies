@@ -16,7 +16,7 @@ USER_CONFIG: Dict[str, object] = {
     # 指向 train_refit.py 生成的部署目录根。若为空，将自动从 results_deploy 下选择最新 cut_ 目录。
     "deploy_root": "",
     # 预测范围：按日期选择（包含端点）。若输入非交易日，将自动向内收敛到最近可用日期。
-    "start_date": "2025-08-25",
+    "start_date": "2025-08-01",
     "end_date": "2025-08-25",
 }
 

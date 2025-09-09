@@ -91,7 +91,7 @@ def _auto_find_price_cols(df: pd.DataFrame, cfg: BacktestConfig) -> Tuple[str, s
         "date", "交易日期", "日期", "交易日", "day"
     ]
     open_candidates = [
-        "open", "开盘", "开盘价"
+        "day_session_open"
     ]
     close_candidates = [
         "close", "收盘", "收盘价"
