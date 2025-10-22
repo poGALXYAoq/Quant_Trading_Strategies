@@ -225,3 +225,5 @@ identifier.sqlite
 /GBDT_futures/results/
 
 /GBDT_futures/results_deploy/
+
+/ETL/qlib/
